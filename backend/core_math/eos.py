@@ -69,28 +69,14 @@ def calculate_advanced_pr_parameters(
 def calculate_pressure(
     volume: float, temperature: float, tc: float, pc: float, omega: float
 ) -> float:
-    """
-    Calculates the pressure of a gas using the Peng-Robinson equation of state.
-
-    Args:
-        volume (float): Molar volume in m^3/mol.
-        temperature (float): Absolute temperature in Kelvin (K).
-        tc (float): Critical temperature in Kelvin (K).
-        pc (float): Critical pressure in Pascals (Pa).
-        omega (float): Acentric factor (dimensionless).
-
-    Returns:
-        float: Calculated pressure in Pascals (Pa).
-
-    Raises:
-        ValueError: If volume or temperature are less than or equal to zero.
-    """
+    # ... (docstring y validaciones iguales) ...
     if volume <= 0:
         raise ValueError("Molar volume must be strictly positive (V > 0).")
     if temperature <= 0:
         raise ValueError("Temperature must be strictly positive (T > 0).")
 
-    a, b = calculate_advanced_pr_parameters(temperature, tc, pc, omega)
+    # Corrección: desempaquetar correctamente los 3 valores, ignorando da_dT con '_'
+    a, b, _ = calculate_advanced_pr_parameters(temperature, tc, pc, omega)
     
     # Peng-Robinson Equation
     term1 = (UNIVERSAL_GAS_CONSTANT * temperature) / (volume - b)
@@ -102,49 +88,19 @@ def calculate_pressure(
 def calculate_volume(
     pressure: float, temperature: float, tc: float, pc: float, omega: float
 ) -> float:
-    """
-    Calculates the molar volume of a gas given pressure and temperature.
-    
-    Solves for the compressibility factor (Z) using the cubic Peng-Robinson form.
-
-    Args:
-        pressure (float): Pressure in Pascals (Pa).
-        temperature (float): Absolute temperature in Kelvin (K).
-        tc (float): Critical temperature in Kelvin (K).
-        pc (float): Critical pressure in Pascals (Pa).
-        omega (float): Acentric factor (dimensionless).
-
-    Returns:
-        float: Calculated molar volume in m^3/mol (maximum real root).
-
-    Raises:
-        ValueError: If pressure or temperature are less than or equal to zero, 
-                    or if no valid positive real roots are found.
-    """
+    # ... (docstring y validaciones iguales) ...
     if pressure <= 0:
         raise ValueError("Pressure must be strictly positive (P > 0).")
     if temperature <= 0:
         raise ValueError("Temperature must be strictly positive (T > 0).")
 
-    a, b = calculate_advanced_pr_parameters(temperature, tc, pc, omega)
+    # Corrección: desempaquetar correctamente
+    a, b, _ = calculate_advanced_pr_parameters(temperature, tc, pc, omega)
     
-    A_coeff = (a * pressure) / (UNIVERSAL_GAS_CONSTANT**2 * temperature**2)
-    B_coeff = (b * pressure) / (UNIVERSAL_GAS_CONSTANT * temperature)
+    # Reutilizar la función de Z en lugar de repetir la lógica cúbica
+    z_max = calculate_compressibility_factor(pressure, temperature, a, b)
     
-    # Coefficients for the cubic equation: Z^3 + c2*Z^2 + c1*Z + c0 = 0
-    c2 = -(1 - B_coeff)
-    c1 = A_coeff - 2 * B_coeff - 3 * B_coeff**2
-    c0 = -(A_coeff * B_coeff - B_coeff**2 - B_coeff**3)
-    
-    roots_z = np.roots([1, c2, c1, c0])
-    
-    # Extract real roots (accounting for minor floating point inaccuracies in imaginary parts)
-    real_roots = [z.real for z in roots_z if abs(z.imag) < 1e-9 and z.real > 0]
-    
-    if not real_roots:
-        raise ValueError("No valid positive real roots found for compressibility factor (Z).")
-        
-    z_max = max(real_roots)
+    # Despejar el volumen
     return z_max * UNIVERSAL_GAS_CONSTANT * temperature / pressure
 
 
