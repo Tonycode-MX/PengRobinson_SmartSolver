@@ -2,6 +2,8 @@ import numpy as np
 import CoolProp.CoolProp as CP
 from typing import Tuple, Dict, List
 
+from eos import calculate_advanced_pr_parameters, calculate_compressibility_factor
+
 # Universal gas constant in J/(mol*K)
 UNIVERSAL_GAS_CONSTANT = 8.314462618
 
