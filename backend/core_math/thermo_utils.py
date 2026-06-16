@@ -232,3 +232,231 @@ if __name__ == "__main__":
         print(f"An unexpected error occurred during testing: {e}")
 
 '''
+import numpy as np
+import CoolProp.CoolProp as CP
+from typing import Tuple, Dict
+
+# Universal gas constant in J/(mol*K)
+UNIVERSAL_GAS_CONSTANT = 8.314462618
+
+
+def get_gas_properties(fluid: str) -> Tuple[float, float, float]:
+    """
+    Extracts the critical properties of a given fluid using CoolProp.
+
+    Args:
+        fluid (str): The name of the fluid (e.g., 'Methane', 'Nitrogen').
+
+    Returns:
+        Tuple[float, float, float]: Critical temperature (Tc) in K, 
+                                     Critical pressure (Pc) in Pa, 
+                                     Acentric factor (omega), dimensionless.
+    """
+    try:
+        tc = float(CP.PropsSI("Tcrit", fluid))
+        pc = float(CP.PropsSI("pcrit", fluid))
+        omega = float(CP.PropsSI("acentric", fluid))
+        return tc, pc, omega
+    except ValueError as e:
+        raise ValueError(f"Fluid '{fluid}' is not available in CoolProp. Original error: {e}")
+
+
+def calculate_advanced_pr_parameters(
+    temperature: float, tc: float, pc: float, omega: float
+) -> Tuple[float, float, float]:
+    """
+    Calculates the Peng-Robinson 'a' and 'b' parameters, along with the 
+    analytical temperature derivative da/dT.
+
+    Args:
+        temperature (float): Absolute temperature in Kelvin (K).
+        tc (float): Critical temperature in Kelvin (K).
+        pc (float): Critical pressure in Pascals (Pa).
+        omega (float): Acentric factor (dimensionless).
+
+    Returns:
+        Tuple[float, float, float]: Parameter 'a', parameter 'b', and derivative da/dT.
+    """
+    if temperature <= 0 or tc <= 0 or pc <= 0:
+        raise ValueError("Temperature, critical temperature, and critical pressure must be strictly positive.")
+
+    tr = temperature / tc
+    kappa = 0.37464 + 1.54226 * omega - 0.26992 * omega**2
+    alpha = (1 + kappa * (1 - np.sqrt(tr))) ** 2
+
+    a = 0.45724 * (UNIVERSAL_GAS_CONSTANT**2 * tc**2) / pc * alpha
+    b = 0.07780 * (UNIVERSAL_GAS_CONSTANT * tc) / pc
+
+    # Analytical derivative of alpha with respect to T: d(alpha)/dT
+    dalpha_dT = -kappa * (1 + kappa * (1 - np.sqrt(tr))) / (tc * np.sqrt(tr))
+    # Analytical derivative of 'a' with respect to T: da/dT
+    da_dT = 0.45724 * (UNIVERSAL_GAS_CONSTANT**2 * tc**2) / pc * dalpha_dT
+
+    return a, b, da_dT
+
+
+def calculate_compressibility_factor(
+    pressure: float, temperature: float, a: float, b: float
+) -> float:
+    """
+    Solves the cubic Peng-Robinson polynomial to find the compressibility factor (Z).
+    Selects the maximum real root corresponding to the stable vapor/gas phase.
+    """
+    A_coeff = (a * pressure) / (UNIVERSAL_GAS_CONSTANT**2 * temperature**2)
+    B_coeff = (b * pressure) / (UNIVERSAL_GAS_CONSTANT * temperature)
+
+    # Cubic equation coefficients: Z^3 + c2*Z^2 + c1*Z + c0 = 0
+    c2 = -(1 - B_coeff)
+    c1 = A_coeff - 2 * B_coeff - 3 * B_coeff**2
+    c0 = -(A_coeff * B_coeff - B_coeff**2 - B_coeff**3)
+
+    roots_z = np.roots([1, c2, c1, c0])
+    real_roots = [z.real for z in roots_z if abs(z.imag) < 1e-9 and z.real > 0]
+
+    if not real_roots:
+        raise ValueError("No valid positive real roots found for compressibility factor (Z).")
+
+    return max(real_roots)
+
+
+def calculate_residual_properties(
+    pressure: float, temperature: float, tc: float, pc: float, omega: float
+) -> Dict[str, float]:
+    """
+    Calculates advanced residual thermodynamic properties using the Peng-Robinson EOS.
+
+    Args:
+        pressure (float): Pressure in Pascals (Pa).
+        temperature (float): Absolute temperature in Kelvin (K).
+        tc (float): Critical temperature (K).
+        pc (float): Critical pressure (Pa).
+        omega (float): Acentric factor.
+
+    Returns:
+        Dict[str, float]: Dictionary containing Z, Fugacity coeff, Residual H, Residual S, and V.
+    """
+    if pressure <= 0 or temperature <= 0:
+        raise ValueError("Pressure and temperature must be strictly positive.")
+
+    # 1. Compute fundamental and derivative EOS parameters
+    a, b, da_dT = calculate_advanced_pr_parameters(temperature, tc, pc, omega)
+    z = calculate_compressibility_factor(pressure, temperature, a, b)
+
+    # Dimensionless EOS parameters
+    A = (a * pressure) / (UNIVERSAL_GAS_CONSTANT**2 * temperature**2)
+    B = (b * pressure) / (UNIVERSAL_GAS_CONSTANT * temperature)
+
+    # 2. Fugacity Coefficient (phi) Calculation
+    sqrt_2 = np.sqrt(2)
+    term_fug_1 = z - 1 - np.log(z - B)
+    term_fug_2 = (A / (2 * sqrt_2 * B)) * np.log((z + (1 + sqrt_2) * B) / (z + (1 - sqrt_2) * B))
+    ln_phi = term_fug_1 - term_fug_2
+    phi = np.exp(ln_phi)
+
+    # 3. Residual Enthalpy (H^R) Calculation in J/mol
+    term_h_1 = UNIVERSAL_GAS_CONSTANT * temperature * (z - 1)
+    term_h_2 = (temperature * da_dT - a) / (2 * sqrt_2 * b)
+    term_h_3 = np.log((z + (1 + sqrt_2) * B) / (z + (1 - sqrt_2) * B))
+    h_residual = term_h_1 + term_h_2 * term_h_3
+
+    # 4. Residual Entropy (S^R) Calculation in J/(mol*K)
+    term_s_1 = UNIVERSAL_GAS_CONSTANT * np.log(z - B)
+    term_s_2 = da_dT / (2 * sqrt_2 * b)
+    term_s_3 = np.log((z + (1 + sqrt_2) * B) / (z + (1 - sqrt_2) * B))
+    s_residual = term_s_1 + term_s_2 * term_s_3
+
+    # Derived molar volume for subsequent thermal calculations
+    v_molar = z * UNIVERSAL_GAS_CONSTANT * temperature / pressure
+
+    return {
+        "compressibility_factor_Z": z,
+        "fugacity_coefficient_phi": phi,
+        "residual_enthalpy_Hr": h_residual,
+        "residual_entropy_Sr": s_residual,
+        "molar_volume_V": v_molar,
+    }
+
+
+def calculate_joule_thomson(
+    pressure: float, temperature: float, tc: float, pc: float, omega: float, cp_ideal: float
+) -> float:
+    """
+    Calculates the Joule-Thomson Coefficient (mu_JT) in K/Pa.
+    Requires the ideal gas Cp of the substance at the given temperature.
+    """
+    # Numerical differentiation to find (dV/dT)_P
+    dT = 1e-3
+    props_low = calculate_residual_properties(pressure, temperature - dT, tc, pc, omega)
+    props_high = calculate_residual_properties(pressure, temperature + dT, tc, pc, omega)
+    
+    v_low = props_low["molar_volume_V"]
+    v_high = props_high["molar_volume_V"]
+    
+    # Partial derivative (dV/dT) at constant Pressure
+    dv_dT_p = (v_high - v_low) / (2 * dT)
+
+    # Extract central state properties
+    props_central = calculate_residual_properties(pressure, temperature, tc, pc, omega)
+    v_molar = props_central["molar_volume_V"]
+    
+    # Correct ideal Cp to real Cp: Cp_real = Cp_ideal + d(H^R)/dT
+    h_low = props_low["residual_enthalpy_Hr"]
+    h_high = props_high["residual_enthalpy_Hr"]
+    dHr_dT_p = (h_high - h_low) / (2 * dT)
+    cp_real = cp_ideal + dHr_dT_p
+
+    # Classical Joule-Thomson relation: mu_JT = (1 / Cp_real) * [ T * (dV/dT)_P - V ]
+    mu_jt = (1.0 / cp_real) * (temperature * dv_dT_p - v_molar)
+    return mu_jt
+
+
+# --- Testing and Demonstration Block ---
+if __name__ == "__main__":
+    print("=========================================================")
+    print("   ADVANCED RESIDUAL PROPERTIES ENGINE (PR EOS)          ")
+    print("=========================================================\n")
+
+    fluid_name = "Methane"
+    
+    try:
+        # 1. Load Critical Constants
+        t_crit, p_crit, acentric = get_gas_properties(fluid_name)
+        print(f"[{fluid_name}] Critical Constants Loaded:")
+        print(f"Tc = {t_crit:.2f} K | Pc = {p_crit:.2f} Pa | Omega = {acentric:.4f}\n")
+
+        # Test State Conditions (High pressure gas)
+        test_T = 280.0       # Kelvin
+        test_P = 5.0e6       # 50.0 bar (5,000,000 Pa)
+
+        # 2. Compute State and Residual Properties
+        results = calculate_residual_properties(test_P, test_T, t_crit, p_crit, acentric)
+
+        print(f"--- Thermodynamic Results at {test_T} K and {test_P/1e5:.1f} bar ---")
+        print(f"Compressibility Factor (Z)   : {results['compressibility_factor_Z']:.5f}")
+        print(f"Fugacity Coefficient (phi)  : {results['fugacity_coefficient_phi']:.5f}")
+        print(f"Residual Enthalpy (H^R)      : {results['residual_enthalpy_Hr']:.2f} J/mol")
+        print(f"Residual Entropy (S^R)       : {results['residual_entropy_Sr']:.2f} J/(mol*K)")
+        print(f"Real Molar Volume (V)        : {results['molar_volume_V']:.7f} m^3/mol")
+
+        # 3. Fetch Ideal Gas Cp at 1 atm reference to avoid numerical singularities
+        cp_ideal_molar = CP.PropsSI("Cpmolar", "T", test_T, "P", 101325, fluid_name)
+        
+        # 4. Compute Joule-Thomson Coefficient
+        mu_jt = calculate_joule_thomson(test_P, test_T, t_crit, p_crit, acentric, cp_ideal_molar)
+        
+        print(f"\n--- Thermal Response Coeff ---")
+        print(f"Joule-Thomson Coeff (mu_JT) : {mu_jt * 1e6:.4f} K/MPa")
+        if mu_jt > 0:
+            print("-> Effect: The gas WILL COOL DOWN upon isoenthalpic expansion (throttling valve).")
+        else:
+            print("-> Effect: The gas WILL HEAT UP upon isoenthalpic expansion (throttling valve).")
+
+        # 5. Robustness Validation Test
+        print("\n--- System Robustness Check ---")
+        try:
+            calculate_residual_properties(-5000, test_T, t_crit, p_crit, acentric)
+        except ValueError as e:
+            print(f"Boundary protection active: {e}")
+
+    except Exception as e:
+        print(f"An unexpected error occurred in the system: {e}")
