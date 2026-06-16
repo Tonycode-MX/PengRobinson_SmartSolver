@@ -460,3 +460,209 @@ if __name__ == "__main__":
 
     except Exception as e:
         print(f"An unexpected error occurred in the system: {e}")
+        import numpy as np
+import CoolProp.CoolProp as CP
+from typing import List, Tuple, Dict
+
+# Universal gas constant in J/(mol*K)
+UNIVERSAL_GAS_CONSTANT = 8.314462618
+
+
+def get_mixture_pure_properties(fluids: List[str]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Extracts critical properties (Tc, Pc, omega) for all pure components 
+    present in the chemical mixture using CoolProp.
+
+    Args:
+        fluids (List[str]): List of fluid names (e.g., ['Methane', 'Ethane', 'CO2']).
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray, np.ndarray]: Arrays of Tc (K), Pc (Pa), and omega.
+    """
+    tc_list, pc_list, omega_list = [], [], []
+    for fluid in fluids:
+        try:
+            tc_list.append(CP.PropsSI("Tcrit", fluid))
+            pc_list.append(CP.PropsSI("pcrit", fluid))
+            omega_list.append(CP.PropsSI("acentric", fluid))
+        except ValueError as e:
+            raise ValueError(f"Fluid '{fluid}' is not recognized in CoolProp database. Error: {e}")
+            
+    return np.array(tc_list), np.array(pc_list), np.array(omega_list)
+
+
+def calculate_pure_pr_parameters(
+    temperature: float, tc: np.ndarray, pc: np.ndarray, omega: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Calculates the individual 'a', 'b' and analytical temperature derivative (da/dT)
+    vectors for all components at the system temperature.
+    """
+    if temperature <= 0:
+        raise ValueError("System temperature must be strictly positive (T > 0).")
+
+    tr = temperature / tc
+    kappa = 0.37464 + 1.54226 * omega - 0.26992 * omega**2
+    alpha = (1 + kappa * (1 - np.sqrt(tr))) ** 2
+
+    a_pure = 0.45724 * (UNIVERSAL_GAS_CONSTANT**2 * tc**2) / pc * alpha
+    b_pure = 0.07780 * (UNIVERSAL_GAS_CONSTANT * tc) / pc
+
+    # Analytical temperature derivative of alpha parameter: d(alpha)/dT
+    dalpha_dT = -kappa * (1 + kappa * (1 - np.sqrt(tr))) / (tc * np.sqrt(tr))
+    # Analytical temperature derivative of attraction parameter: da/dT
+    da_dT_pure = 0.45724 * (UNIVERSAL_GAS_CONSTANT**2 * tc**2) / pc * dalpha_dT
+
+    return a_pure, b_pure, da_dT_pure
+
+
+def apply_van_der_waals_mixing_rules(
+    mole_fractions: np.ndarray, a_pure: np.ndarray, b_pure: np.ndarray, 
+    da_dT_pure: np.ndarray, kij_matrix: np.ndarray
+) -> Tuple[float, float, float]:
+    """
+    Applies classical van der Waals mixing rules to evaluate the mixture parameters 
+    am (attraction), bm (covolume), and the overall temperature derivative dam/dT.
+    """
+    num_components = len(mole_fractions)
+    
+    # 1. Mixture covolume (bm) - Linear scaling rule
+    bm = float(np.sum(mole_fractions * b_pure))
+    
+    # 2. Mixture attraction (am) and derivative (dam_dT) via cross-interactions matrix
+    am = 0.0
+    dam_dT = 0.0
+    
+    for i in range(num_components):
+        for j in range(num_components):
+            # Cross-attraction parameter (Geometric mean rule corrected by kij)
+            a_ij = np.sqrt(a_pure[i] * a_pure[j]) * (1.0 - kij_matrix[i, j])
+            am += mole_fractions[i] * mole_fractions[j] * a_ij
+            
+            # Analytical derivative of cross-attraction: da_ij/dT
+            # d(sqrt(a_i*a_j))/dT = 0.5 * (a_j*da_i/dT + a_i*da_j/dT) / sqrt(a_i*a_j)
+            da_ij_dT = 0.5 * (a_pure[j] * da_dT_pure[i] + a_pure[i] * da_dT_pure[j]) / np.sqrt(a_pure[i] * a_pure[j])
+            da_ij_dT_corrected = da_ij_dT * (1.0 - kij_matrix[i, j])
+            dam_dT += mole_fractions[i] * mole_fractions[j] * da_ij_dT_corrected
+
+    return am, bm, dam_dT
+
+
+def calculate_mixture_z_factor(pressure: float, temperature: float, am: float, bm: float) -> float:
+    """
+    Solves the cubic Peng-Robinson EOS polynomial using unified mixture parameters 
+    to extract the real compressibility factor (Z).
+    """
+    A = (am * pressure) / (UNIVERSAL_GAS_CONSTANT**2 * temperature**2)
+    B = (bm * pressure) / (UNIVERSAL_GAS_CONSTANT * temperature)
+
+    # Polynomial coefficients layout: Z^3 + c2*Z^2 + c1*Z + c0 = 0
+    c2 = -(1.0 - B)
+    c1 = A - 2.0 * B - 3.0 * B**2
+    c0 = -(A * B - B**2 - B**3)
+
+    roots_z = np.roots([1.0, c2, c1, c0])
+    real_roots = [z.real for z in roots_z if abs(z.imag) < 1e-9 and z.real > 0]
+
+    if not real_roots:
+        raise ValueError("Thermodynamic state error: No valid positive roots found for mixture Z.")
+
+    return max(real_roots)
+
+
+def calculate_mixture_properties(
+    pressure: float, temperature: float, fluids: List[str], mole_fractions: List[float], kij_matrix: np.ndarray
+) -> Dict[str, float]:
+    """
+    Master function to solve the thermodynamic equation of state for a multicomponent gas.
+
+    Returns a comprehensive dictionary with unified system attributes.
+    """
+    x = np.array(mole_fractions)
+    if not np.isclose(np.sum(x), 1.0):
+        raise ValueError("Composition definition error: Mole fractions must sum up to exactly 1.0.")
+    if pressure <= 0:
+        raise ValueError("System pressure must be strictly positive (P > 0).")
+
+    # 1. Fetch pure data and solve local parameters
+    tc, pc, omega = get_mixture_pure_properties(fluids)
+    a_p, b_p, da_dT_p = calculate_pure_pr_parameters(temperature, tc, pc, omega)
+    
+    # 2. Merge properties using mixing rules
+    am, bm, dam_dT = apply_van_der_waals_mixing_rules(x, a_p, b_p, da_dT_p, kij_matrix)
+    
+    # 3. Solve master mixture Z-factor
+    z_mixture = calculate_mixture_z_factor(pressure, temperature, am, bm)
+
+    # 4. Dimensionless system parameters
+    A = (am * pressure) / (UNIVERSAL_GAS_CONSTANT**2 * temperature**2)
+    B = (bm * pressure) / (UNIVERSAL_GAS_CONSTANT * temperature)
+    
+    # 5. Extract caloric residual attributes for the mixture
+    sqrt_2 = np.sqrt(2)
+    log_term = np.log((z_mixture + (1 + sqrt_2) * B) / (z_mixture + (1 - sqrt_2) * B))
+    
+    # Combined Residual Enthalpy (Hm^R)
+    term_h1 = UNIVERSAL_GAS_CONSTANT * temperature * (z_mixture - 1.0)
+    term_h2 = (temperature * dam_dT - am) / (2.0 * sqrt_2 * bm)
+    h_res_mix = term_h1 + term_h2 * log_term
+    
+    # Combined Residual Entropy (Sm^R)
+    term_s1 = UNIVERSAL_GAS_CONSTANT * np.log(z_mixture - B)
+    term_s2 = dam_dT / (2.0 * sqrt_2 * bm)
+    s_res_mix = term_s1 + term_s2 * log_term
+
+    # Unified real molar volume
+    v_molar_mix = z_mixture * UNIVERSAL_GAS_CONSTANT * temperature / pressure
+
+    return {
+        "mixture_Z": z_mixture,
+        "mixture_Hr_J_mol": h_res_mix,
+        "mixture_Sr_J_molK": s_res_mix,
+        "mixture_V_m3_mol": v_molar_mix
+    }
+
+
+# --- Execution and Demonstration Entry Point ---
+if __name__ == "__main__":
+    print("=========================================================")
+    print("   MULTICOMPONENT MIXTURE EOS SOLVER (PENG-ROBINSON)    ")
+    print("=========================================================\n")
+
+    # Target Mixture Definition: Natural Gas Surrogate (3 components)
+    gas_components = ["Methane", "Ethane", "Propane"]
+    fractions = [0.85, 0.10, 0.05]  # 85% CH4, 10% C2H6, 5% C3H8
+    
+    # Symmetric Binary Interaction Parameter Matrix (kij)
+    # Row/Col order follows gas_components layout
+    kij = np.array([
+        [0.000, 0.002, 0.005],  # CH4 interactions
+        [0.002, 0.000, 0.001],  # C2H6 interactions
+        [0.005, 0.001, 0.000]   # C3H8 interactions
+    ])
+
+    # Simulation conditions (High-pressure pipeline simulation state)
+    system_T = 290.0      # Kelvin
+    system_P = 6.5e6      # 65.0 bar (6,500,000 Pa)
+
+    try:
+        results = calculate_mixture_properties(system_P, system_T, gas_components, fractions, kij)
+        
+        print("--- Gas Composition Stream ---")
+        for comp, frac in zip(gas_components, fractions):
+            print(f" * {comp:<8}: {frac*100:>5.1f}%")
+            
+        print(f"\n--- System State Conditions: {system_T} K @ {system_P/1e5:.1f} bar ---")
+        print(f"Mixture Compressibility Factor (Z) : {results['mixture_Z']:.5f}")
+        print(f"Mixture Molar Volume (V_m)         : {results['mixture_V_m3_mol']:.7f} m^3/mol")
+        print(f"Mixture Residual Enthalpy (H^R)    : {results['mixture_Hr_J_mol']:.2f} J/mol")
+        print(f"Mixture Residual Entropy (S^R)     : {results['mixture_Sr_J_molK']:.2f} J/(mol*K)")
+
+        # Boundary Protection Check
+        print("\n--- System Boundary Check ---")
+        calculate_mixture_properties(system_P, system_T, gas_components, [0.5, 0.5, 0.1], kij) # Bad fractions
+
+    except ValueError as e:
+        print(f"Boundary protection active: {e}")
+    except Exception as e:
+        print(f"An unexpected system failure occurred: {e}")
