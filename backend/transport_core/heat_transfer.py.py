@@ -204,4 +204,6 @@ class ThermalAnalysisTools:
             }
         except ValueError:
             return {
-                "status": 400,
+                "status": 400, 
+                "error": "Type Error: Expected a numeric float value but received a string/uncastable type."
+            }
