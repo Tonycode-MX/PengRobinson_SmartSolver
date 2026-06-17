@@ -1,234 +1,337 @@
 import numpy as np
 import scipy.optimize as opt
 import CoolProp.CoolProp as CP
-from typing import Tuple
+from typing import Tuple, List
 
 # Universal gas constant in J/(mol*K)
-UNIVERSAL_GAS_CONSTANT = 8.31446
+UNIVERSAL_GAS_CONSTANT = 8.314462618
 
-
-def get_gas_properties(fluid: str) -> Tuple[float, float, float]:
+def get_gas_properties(fluids: List[str]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Extracts the critical properties of a given fluid using CoolProp.
+    Extracts the critical properties of a list of fluids using CoolProp.
 
     Args:
-        fluid (str): The name of the fluid (e.g., 'Methane', 'Water').
+        fluids (List[str]): List of fluid names (e.g., ['Methane', 'Ethane']).
 
     Returns:
-        Tuple[float, float, float]: A tuple containing:
-            - Critical temperature (Tc) in Kelvin (K).
-            - Critical pressure (Pc) in Pascals (Pa).
-            - Acentric factor (omega), dimensionless.
-
-    Raises:
-        ValueError: If the fluid is not available or recognized in CoolProp.
+        Tuple[np.ndarray, np.ndarray, np.ndarray]: Arrays for Tc (K), Pc (Pa), and omega.
     """
-    try:
-        tc = float(CP.PropsSI("Tcrit", fluid))
-        pc = float(CP.PropsSI("pcrit", fluid))
-        omega = float(CP.PropsSI("acentric", fluid))
-        return tc, pc, omega
-    except ValueError as e:
-        raise ValueError(f"Fluid '{fluid}' is not available in CoolProp. Original error: {e}")
+    tc_list, pc_list, omega_list = [], [], []
+    for fluid in fluids:
+        try:
+            tc_list.append(float(CP.PropsSI("Tcrit", fluid)))
+            pc_list.append(float(CP.PropsSI("pcrit", fluid)))
+            omega_list.append(float(CP.PropsSI("acentric", fluid)))
+        except ValueError as e:
+            raise ValueError(f"Fluid '{fluid}' is not available in CoolProp. Original error: {e}")
+            
+    return np.array(tc_list), np.array(pc_list), np.array(omega_list)
 
 
 def calculate_pr_parameters(
-    temperature: float, tc: float, pc: float, omega: float
-) -> Tuple[float, float]:
+    temperature: float, 
+    fluids: List[str], 
+    fractions: List[float], 
+    kij_matrix: np.ndarray
+) -> Tuple[float, float, float]:
     """
-    Calculates the 'a' and 'b' parameters for the Peng-Robinson equation of state.
+    Calculates the Peng-Robinson parameters (a, b) and the temperature derivative (da/dT)
+    for a multicomponent mixture using Van der Waals mixing rules.
 
     Args:
-        temperature (float): Absolute temperature in Kelvin (K).
-        tc (float): Critical temperature in Kelvin (K).
-        pc (float): Critical pressure in Pascals (Pa).
-        omega (float): Acentric factor (dimensionless).
+        temperature (float): Absolute temperature of the system in Kelvin (K).
+        fluids (List[str]): List of fluid names as recognized by CoolProp.
+        fractions (List[float]): Molar fractions of each component in the mixture.
+        kij_matrix (np.ndarray): A 2D symmetric NumPy array of shape (n, n) representing 
+                                 the binary interaction parameters (k_ij) between components.
 
     Returns:
-        Tuple[float, float]: The calculated 'a' and 'b' parameters.
+        Tuple[float, float, float]: A tuple containing:
+            - a_m (float): The mixture attraction parameter.
+            - b_m (float): The mixture co-volume parameter.
+            - da_dT_m (float): The analytical derivative of a_m with respect to temperature.
 
     Raises:
-        ValueError: If temperature, tc, or pc are less than or equal to zero.
+        ValueError: If temperature is less than or equal to zero.
+        ValueError: If the list of fluids is empty.
+        ValueError: If the length of fractions does not match the number of fluids.
+        ValueError: If the kij_matrix is not a square matrix of size (n, n).
+        ValueError: If any molar fraction is negative or if they do not sum to 1.0.
     """
-    if temperature <= 0 or tc <= 0 or pc <= 0:
-        raise ValueError("Temperature, critical temperature, and critical pressure must be strictly positive.")
+    if temperature <= 0:
+        raise ValueError("Temperature must be strictly positive (T > 0).")
+        
+    n = len(fluids)
+    if n == 0:
+        raise ValueError("The list of fluids cannot be empty.")
+        
+    x = np.array(fractions)
+    if len(x) != n:
+        raise ValueError(f"Dimension mismatch: expected {n} fractions, got {len(x)}.")
+        
+    if kij_matrix.shape != (n, n):
+        raise ValueError(f"Dimension mismatch: kij_matrix must be of shape ({n}, {n}).")
+        
+    if np.any(x < 0) or not np.isclose(np.sum(x), 1.0):
+        raise ValueError("Molar fractions must be non-negative and sum exactly to 1.0.")
 
+    tc, pc, omega = get_gas_properties(fluids)
+
+    # 1. Pure component parameters (Vectorized calculations)
     tr = temperature / tc
     kappa = 0.37464 + 1.54226 * omega - 0.26992 * omega**2
     alpha = (1 + kappa * (1 - np.sqrt(tr))) ** 2
 
-    a = 0.45724 * (UNIVERSAL_GAS_CONSTANT**2 * tc**2) / pc * alpha
-    b = 0.07780 * (UNIVERSAL_GAS_CONSTANT * tc) / pc
+    a_ind = 0.45724 * (UNIVERSAL_GAS_CONSTANT**2 * tc**2) / pc * alpha
+    b_ind = 0.07780 * (UNIVERSAL_GAS_CONSTANT * tc) / pc
     
-    return a, b
+    # Analytical derivative of alpha and 'a' for pure components
+    dalpha_dT = -kappa * (1 + kappa * (1 - np.sqrt(tr))) / (tc * np.sqrt(tr))
+    da_dT_ind = 0.45724 * (UNIVERSAL_GAS_CONSTANT**2 * tc**2) / pc * dalpha_dT
+
+    # 2. Van der Waals Mixing Rules
+    b_m = np.sum(x * b_ind)
+
+    a_m = 0.0
+    da_dT_m = 0.0
+    for i in range(n):
+        for j in range(n):
+            # Attraction parameter a_ij
+            a_ij = np.sqrt(a_ind[i] * a_ind[j]) * (1.0 - kij_matrix[i, j])
+            a_m += x[i] * x[j] * a_ij
+            
+            # Cross derivative da_ij/dT
+            term1 = da_dT_ind[i] * np.sqrt(a_ind[j] / a_ind[i]) if a_ind[i] > 0 else 0
+            term2 = da_dT_ind[j] * np.sqrt(a_ind[i] / a_ind[j]) if a_ind[j] > 0 else 0
+            da_ij_dT = 0.5 * (term1 + term2) * (1.0 - kij_matrix[i, j])
+            da_dT_m += x[i] * x[j] * da_ij_dT
+
+    return a_m, b_m, da_dT_m
 
 
 def calculate_pressure(
-    volume: float, temperature: float, tc: float, pc: float, omega: float
+    volume: float, 
+    temperature: float, 
+    fluids: List[str], 
+    fractions: List[float], 
+    kij_matrix: np.ndarray
 ) -> float:
     """
-    Calculates the pressure of a gas using the Peng-Robinson equation of state.
+    Calculates the pressure of a pure fluid or a multicomponent mixture 
+    using the Peng-Robinson Equation of State.
 
     Args:
-        volume (float): Molar volume in m^3/mol.
-        temperature (float): Absolute temperature in Kelvin (K).
-        tc (float): Critical temperature in Kelvin (K).
-        pc (float): Critical pressure in Pascals (Pa).
-        omega (float): Acentric factor (dimensionless).
+        volume (float): Molar volume of the system in m^3/mol.
+        temperature (float): Absolute temperature of the system in Kelvin (K).
+        fluids (List[str]): List of fluid names recognized by CoolProp.
+        fractions (List[float]): Molar fractions of each component in the mixture.
+        kij_matrix (np.ndarray): A 2D symmetric NumPy array representing the 
+                                 binary interaction parameters (k_ij).
 
     Returns:
         float: Calculated pressure in Pascals (Pa).
 
     Raises:
-        ValueError: If volume or temperature are less than or equal to zero.
+        ValueError: If molar volume or temperature is less than or equal to zero.
+        ValueError: If the molar volume is less than or equal to the mixture co-volume (b_m),
+                    which is physically impossible and causes mathematical singularities.
     """
     if volume <= 0:
         raise ValueError("Molar volume must be strictly positive (V > 0).")
     if temperature <= 0:
         raise ValueError("Temperature must be strictly positive (T > 0).")
 
-    a, b = calculate_pr_parameters(temperature, tc, pc, omega)
+    # Fetch mixture parameters
+    a_m, b_m, _ = calculate_pr_parameters(temperature, fluids, fractions, kij_matrix)
     
+    # Critical Physical Validation: Volume must be greater than the excluded volume
+    if volume <= b_m:
+        raise ValueError(
+            f"Physically impossible state: Molar volume (V = {volume:.5e}) "
+            f"must be strictly greater than the mixture co-volume (b_m = {b_m:.5e})."
+        )
+
     # Peng-Robinson Equation
-    term1 = (UNIVERSAL_GAS_CONSTANT * temperature) / (volume - b)
-    term2 = a / (volume * (volume + b) + b * (volume - b))
+    term1 = (UNIVERSAL_GAS_CONSTANT * temperature) / (volume - b_m)
+    term2 = a_m / (volume * (volume + b_m) + b_m * (volume - b_m))
     
     return term1 - term2
 
 
 def calculate_volume(
-    pressure: float, temperature: float, tc: float, pc: float, omega: float
+    pressure: float, 
+    temperature: float, 
+    fluids: List[str], 
+    fractions: List[float], 
+    kij_matrix: np.ndarray
 ) -> float:
     """
-    Calculates the molar volume of a gas given pressure and temperature.
+    Calculates the molar volume of a gas/vapor mixture given pressure and temperature.
     
-    Solves for the compressibility factor (Z) using the cubic Peng-Robinson form.
+    This function solves the cubic Peng-Robinson equation for the compressibility 
+    factor (Z) and extracts the maximum real root, which mathematically corresponds 
+    to the stable gas, vapor, or supercritical phase.
 
     Args:
-        pressure (float): Pressure in Pascals (Pa).
-        temperature (float): Absolute temperature in Kelvin (K).
-        tc (float): Critical temperature in Kelvin (K).
-        pc (float): Critical pressure in Pascals (Pa).
-        omega (float): Acentric factor (dimensionless).
+        pressure (float): Absolute pressure of the system in Pascals (Pa).
+        temperature (float): Absolute temperature of the system in Kelvin (K).
+        fluids (List[str]): List of fluid names recognized by CoolProp.
+        fractions (List[float]): Molar fractions of each component in the mixture.
+        kij_matrix (np.ndarray): A 2D symmetric NumPy array representing the 
+                                 binary interaction parameters (k_ij).
 
     Returns:
-        float: Calculated molar volume in m^3/mol (maximum real root).
+        float: Calculated molar volume in m^3/mol.
 
     Raises:
-        ValueError: If pressure or temperature are less than or equal to zero, 
-                    or if no valid positive real roots are found.
+        ValueError: If pressure or temperature is less than or equal to zero.
+        ValueError: If no valid positive real roots are found for Z.
+        ValueError: If the calculated volume is physically impossible (V <= b_m).
     """
     if pressure <= 0:
         raise ValueError("Pressure must be strictly positive (P > 0).")
     if temperature <= 0:
         raise ValueError("Temperature must be strictly positive (T > 0).")
 
-    a, b = calculate_pr_parameters(temperature, tc, pc, omega)
+    # Fetch mixture parameters
+    a_m, b_m, _ = calculate_pr_parameters(temperature, fluids, fractions, kij_matrix)
     
-    A_coeff = (a * pressure) / (UNIVERSAL_GAS_CONSTANT**2 * temperature**2)
-    B_coeff = (b * pressure) / (UNIVERSAL_GAS_CONSTANT * temperature)
+    # Solve for Z (maximum real root for vapor/gas phase)
+    z_max = calculate_compressibility_factor(pressure, temperature, a_m, b_m)
     
-    # Coefficients for the cubic equation: Z^3 + c2*Z^2 + c1*Z + c0 = 0
-    c2 = -(1 - B_coeff)
-    c1 = A_coeff - 2 * B_coeff - 3 * B_coeff**2
-    c0 = -(A_coeff * B_coeff - B_coeff**2 - B_coeff**3)
-    
-    roots_z = np.roots([1, c2, c1, c0])
-    
-    # Extract real roots (accounting for minor floating point inaccuracies in imaginary parts)
-    real_roots = [z.real for z in roots_z if abs(z.imag) < 1e-9 and z.real > 0]
-    
-    if not real_roots:
-        raise ValueError("No valid positive real roots found for compressibility factor (Z).")
-        
-    z_max = max(real_roots)
-    return z_max * UNIVERSAL_GAS_CONSTANT * temperature / pressure
+    # Calculate volume using the real gas law
+    molar_volume = z_max * UNIVERSAL_GAS_CONSTANT * temperature / pressure
+
+    # Physical reality check: Volume must exceed the excluded physical space of molecules
+    if molar_volume <= b_m:
+        raise ValueError(
+            f"Calculated state is physically invalid: Molar volume (V = {molar_volume:.5e}) "
+            f"is less than or equal to the mixture co-volume (b_m = {b_m:.5e})."
+        )
+
+    return molar_volume
 
 
 def calculate_temperature(
-    pressure: float, volume: float, tc: float, pc: float, omega: float
+    pressure: float, 
+    volume: float, 
+    fluids: List[str], 
+    fractions: List[float], 
+    kij_matrix: np.ndarray
 ) -> float:
     """
-    Calculates the temperature of a gas given its pressure and molar volume.
+    Calculates the absolute temperature of a gas/vapor mixture given its pressure 
+    and molar volume by finding the root of the Peng-Robinson pressure function.
 
-    Uses Brent's method to find the root of the Peng-Robinson pressure function.
+    This function utilizes Brent's method (brentq) to solve for T such that:
+    P_calc(T, V, x) - P_target = 0. 
+    
+    To ensure convergence, it establishes a dynamic search bracket based on the 
+    mixture's pseudo-critical temperature (Kay's rule).
 
     Args:
-        pressure (float): Pressure in Pascals (Pa).
-        volume (float): Molar volume in m^3/mol.
-        tc (float): Critical temperature in Kelvin (K).
-        pc (float): Critical pressure in Pascals (Pa).
-        omega (float): Acentric factor (dimensionless).
+        pressure (float): Target absolute pressure in Pascals (Pa).
+        volume (float): Molar volume of the system in m^3/mol.
+        fluids (List[str]): List of fluid names recognized by CoolProp.
+        fractions (List[float]): Molar fractions of each component in the mixture.
+        kij_matrix (np.ndarray): A 2D symmetric NumPy array representing the 
+                                 binary interaction parameters (k_ij).
 
     Returns:
         float: Calculated absolute temperature in Kelvin (K).
 
     Raises:
-        ValueError: If pressure or volume are less than or equal to zero, 
-                    or if the root-finding algorithm fails to converge.
+        ValueError: If pressure or volume is less than or equal to zero.
+        ValueError: If the calculated state implies a volume smaller than the 
+                    mixture's co-volume (b_m).
+        ValueError: If the root-finding algorithm fails to converge within the 
+                    established temperature bracket.
     """
     if pressure <= 0:
         raise ValueError("Pressure must be strictly positive (P > 0).")
     if volume <= 0:
         raise ValueError("Molar volume must be strictly positive (V > 0).")
 
+    # Estimate mixture pseudo-critical temperature using Kay's rule
+    # This provides a physically sound anchor for the solver's search bracket
+    tc, _, _ = get_gas_properties(fluids)
+    tc_mix_approx = np.sum(np.array(fractions) * tc)
+
     def objective_function(t_est: float) -> float:
-        return calculate_pressure(volume, t_est, tc, pc, omega) - pressure
+        # calculate_pressure will naturally raise a ValueError if volume <= b_m
+        return calculate_pressure(volume, t_est, fluids, fractions, kij_matrix) - pressure
 
     try:
+        # Brent's method requires the root to be bracketed between f(a) and f(b) with opposite signs
         solution = opt.root_scalar(
-            objective_function, bracket=[tc * 0.1, tc * 5], method="brentq"
+            objective_function, 
+            bracket=[tc_mix_approx * 0.1, tc_mix_approx * 5.0], 
+            method="brentq"
         )
-        if not solution.converged:
-            raise ValueError("Root-finding algorithm did not converge.")
-        return float(solution.root)
-    except ValueError as e:
-        raise ValueError(f"Failed to find a valid temperature: {e}")
-
-
-'''--- Testing / Examples ---
-This section includes example usage and error validation tests for the implemented functions.
-
-if __name__ == "__main__":
-    # --- Testing / Examples ---
-    print("--- Peng-Robinson EOS Calculator Tests ---")
-    
-    fluid_name = "Methane"
-    try:
-        # 1. Get properties
-        t_crit, p_crit, acentric = get_gas_properties(fluid_name)
-        print(f"[{fluid_name}] Critical Properties Extracted:")
-        print(f"Tc = {t_crit:.2f} K, Pc = {p_crit:.2f} Pa, Omega = {acentric:.4f}\n")
-
-        # Define test state
-        test_T = 300.0  # Kelvin
-        test_P = 101325.0  # Pascals (1 atm)
         
-        # 2. Calculate Volume from T and P
-        calc_V = calculate_volume(test_P, test_T, t_crit, p_crit, acentric)
-        print(f"Calculated Volume (at {test_T} K, {test_P} Pa): {calc_V:.6f} m^3/mol")
+        if not solution.converged:
+            raise ValueError(
+                f"Brent's method failed to converge for P={pressure:.2e} Pa and V={volume:.5e} m^3/mol."
+            )
+            
+        return float(solution.root)
+        
+    except ValueError as e:
+        # Catches both root_scalar convergence issues and physical violations from calculate_pressure
+        raise ValueError(f"Failed to resolve a valid temperature. Reason: {e}")
 
-        # 3. Calculate Pressure from V and T (should match test_P)
-        calc_P = calculate_pressure(calc_V, test_T, t_crit, p_crit, acentric)
-        print(f"Calculated Pressure (from {calc_V:.6f} m^3/mol, {test_T} K): {calc_P:.2f} Pa")
 
-        # 4. Calculate Temperature from P and V (should match test_T)
-        calc_T = calculate_temperature(test_P, calc_V, t_crit, p_crit, acentric)
-        print(f"Calculated Temperature (from {calc_V:.6f} m^3/mol, {test_P} Pa): {calc_T:.2f} K\n")
+def calculate_compressibility_factor(
+    pressure: float, 
+    temperature: float, 
+    a: float, 
+    b: float
+) -> float:
+    """
+    Solves the cubic Peng-Robinson polynomial to find the compressibility factor (Z).
 
-        # 5. Error Validation Testing
-        print("--- Testing Error Validation ---")
-        try:
-            calculate_volume(-100, test_T, t_crit, p_crit, acentric)
-        except ValueError as e:
-            print(f"Successfully caught error for negative pressure: {e}")
+    This function constructs the dimensionless parameters A and B, solves the 
+    cubic equation of state, and extracts the maximum positive real root. 
+    The maximum root mathematically corresponds to the stable gas, vapor, 
+    or supercritical phase.
 
-        try:
-            calculate_pressure(calc_V, -50, t_crit, p_crit, acentric)
-        except ValueError as e:
-            print(f"Successfully caught error for negative temperature: {e}")
+    Args:
+        pressure (float): Absolute pressure of the system in Pascals (Pa).
+        temperature (float): Absolute temperature of the system in Kelvin (K).
+        a (float): The Peng-Robinson attraction parameter (pure or mixture).
+        b (float): The Peng-Robinson co-volume parameter (pure or mixture).
 
-    except Exception as e:
-        print(f"An unexpected error occurred during testing: {e}")
+    Returns:
+        float: The compressibility factor (Z), dimensionless.
 
-'''
+    Raises:
+        ValueError: If pressure or temperature is less than or equal to zero.
+        ValueError: If no valid positive real roots are found.
+    """
+    if pressure <= 0:
+        raise ValueError("Pressure must be strictly positive (P > 0).")
+    if temperature <= 0:
+        raise ValueError("Temperature must be strictly positive (T > 0).")
+
+    # Dimensionless coefficients for the cubic equation
+    A_coeff = (a * pressure) / (UNIVERSAL_GAS_CONSTANT**2 * temperature**2)
+    B_coeff = (b * pressure) / (UNIVERSAL_GAS_CONSTANT * temperature)
+
+    # Cubic equation coefficients: Z^3 + c2*Z^2 + c1*Z + c0 = 0
+    c2 = -(1 - B_coeff)
+    c1 = A_coeff - 2 * B_coeff - 3 * B_coeff**2
+    c0 = -(A_coeff * B_coeff - B_coeff**2 - B_coeff**3)
+
+    roots_z = np.roots([1.0, c2, c1, c0])
+    
+    # Extract real roots (accounting for minor floating point inaccuracies in imaginary parts)
+    real_roots = [z.real for z in roots_z if abs(z.imag) < 1e-9 and z.real > 0]
+
+    if not real_roots:
+        raise ValueError(
+            f"No valid positive real roots found for compressibility factor (Z) "
+            f"at P={pressure:.2e} Pa and T={temperature:.2f} K."
+        )
+
+    # Return the maximum root (gas/vapor phase)
+    return max(real_roots)

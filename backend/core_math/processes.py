@@ -1,89 +1,11 @@
 import numpy as np
 import CoolProp.CoolProp as CP
-from typing import Tuple, Dict
+from typing import Tuple, Dict, List
+
+from eos import calculate_advanced_pr_parameters, calculate_compressibility_factor
 
 # Universal gas constant in J/(mol*K)
 UNIVERSAL_GAS_CONSTANT = 8.314462618
-
-
-def get_gas_properties(fluid: str) -> Tuple[float, float, float]:
-    """
-    Extracts the critical properties of a given fluid using CoolProp.
-
-    Args:
-        fluid (str): The name of the fluid (e.g., 'Methane', 'Nitrogen').
-
-    Returns:
-        Tuple[float, float, float]: Critical temperature (Tc) in K, 
-                                     Critical pressure (Pc) in Pa, 
-                                     Acentric factor (omega), dimensionless.
-    """
-    try:
-        tc = float(CP.PropsSI("Tcrit", fluid))
-        pc = float(CP.PropsSI("pcrit", fluid))
-        omega = float(CP.PropsSI("acentric", fluid))
-        return tc, pc, omega
-    except ValueError as e:
-        raise ValueError(f"Fluid '{fluid}' is not available in CoolProp. Original error: {e}")
-
-
-def calculate_advanced_pr_parameters(
-    temperature: float, tc: float, pc: float, omega: float
-) -> Tuple[float, float, float]:
-    """
-    Calculates the Peng-Robinson 'a' and 'b' parameters, along with the 
-    analytical temperature derivative da/dT.
-
-    Args:
-        temperature (float): Absolute temperature in Kelvin (K).
-        tc (float): Critical temperature in Kelvin (K).
-        pc (float): Critical pressure in Pascals (Pa).
-        omega (float): Acentric factor (dimensionless).
-
-    Returns:
-        Tuple[float, float, float]: Parameter 'a', parameter 'b', and derivative da/dT.
-    """
-    if temperature <= 0 or tc <= 0 or pc <= 0:
-        raise ValueError("Temperature, critical temperature, and critical pressure must be strictly positive.")
-
-    tr = temperature / tc
-    kappa = 0.37464 + 1.54226 * omega - 0.26992 * omega**2
-    alpha = (1 + kappa * (1 - np.sqrt(tr))) ** 2
-
-    a = 0.45724 * (UNIVERSAL_GAS_CONSTANT**2 * tc**2) / pc * alpha
-    b = 0.07780 * (UNIVERSAL_GAS_CONSTANT * tc) / pc
-
-    # Analytical derivative of alpha with respect to T: d(alpha)/dT
-    dalpha_dT = -kappa * (1 + kappa * (1 - np.sqrt(tr))) / (tc * np.sqrt(tr))
-    # Analytical derivative of 'a' with respect to T: da/dT
-    da_dT = 0.45724 * (UNIVERSAL_GAS_CONSTANT**2 * tc**2) / pc * dalpha_dT
-
-    return a, b, da_dT
-
-
-def calculate_compressibility_factor(
-    pressure: float, temperature: float, a: float, b: float
-) -> float:
-    """
-    Solves the cubic Peng-Robinson polynomial to find the compressibility factor (Z).
-    Selects the maximum real root corresponding to the stable vapor/gas phase.
-    """
-    A_coeff = (a * pressure) / (UNIVERSAL_GAS_CONSTANT**2 * temperature**2)
-    B_coeff = (b * pressure) / (UNIVERSAL_GAS_CONSTANT * temperature)
-
-    # Cubic equation coefficients: Z^3 + c2*Z^2 + c1*Z + c0 = 0
-    c2 = -(1 - B_coeff)
-    c1 = A_coeff - 2 * B_coeff - 3 * B_coeff**2
-    c0 = -(A_coeff * B_coeff - B_coeff**2 - B_coeff**3)
-
-    roots_z = np.roots([1, c2, c1, c0])
-    real_roots = [z.real for z in roots_z if abs(z.imag) < 1e-9 and z.real > 0]
-
-    if not real_roots:
-        raise ValueError("No valid positive real roots found for compressibility factor (Z).")
-
-    return max(real_roots)
-
 
 def calculate_residual_properties(
     pressure: float, temperature: float, tc: float, pc: float, omega: float
@@ -174,65 +96,6 @@ def calculate_joule_thomson(
     # Classical Joule-Thomson relation: mu_JT = (1 / Cp_real) * [ T * (dV/dT)_P - V ]
     mu_jt = (1.0 / cp_real) * (temperature * dv_dT_p - v_molar)
     return mu_jt
-
-
-# --- Testing and Demonstration Block ---
-if __name__ == "__main__":
-    print("=========================================================")
-    print("   ADVANCED RESIDUAL PROPERTIES ENGINE (PR EOS)          ")
-    print("=========================================================\n")
-
-    fluid_name = "Methane"
-    
-    try:
-        # 1. Load Critical Constants
-        t_crit, p_crit, acentric = get_gas_properties(fluid_name)
-        print(f"[{fluid_name}] Critical Constants Loaded:")
-        print(f"Tc = {t_crit:.2f} K | Pc = {p_crit:.2f} Pa | Omega = {acentric:.4f}\n")
-
-        # Test State Conditions (High pressure gas)
-        test_T = 280.0       # Kelvin
-        test_P = 5.0e6       # 50.0 bar (5,000,000 Pa)
-
-        # 2. Compute State and Residual Properties
-        results = calculate_residual_properties(test_P, test_T, t_crit, p_crit, acentric)
-
-        print(f"--- Thermodynamic Results at {test_T} K and {test_P/1e5:.1f} bar ---")
-        print(f"Compressibility Factor (Z)   : {results['compressibility_factor_Z']:.5f}")
-        print(f"Fugacity Coefficient (phi)  : {results['fugacity_coefficient_phi']:.5f}")
-        print(f"Residual Enthalpy (H^R)      : {results['residual_enthalpy_Hr']:.2f} J/mol")
-        print(f"Residual Entropy (S^R)       : {results['residual_entropy_Sr']:.2f} J/(mol*K)")
-        print(f"Real Molar Volume (V)        : {results['molar_volume_V']:.7f} m^3/mol")
-
-        # 3. Fetch Ideal Gas Cp at 1 atm reference to avoid numerical singularities
-        cp_ideal_molar = CP.PropsSI("Cpmolar", "T", test_T, "P", 101325, fluid_name)
-        
-        # 4. Compute Joule-Thomson Coefficient
-        mu_jt = calculate_joule_thomson(test_P, test_T, t_crit, p_crit, acentric, cp_ideal_molar)
-        
-        print(f"\n--- Thermal Response Coeff ---")
-        print(f"Joule-Thomson Coeff (mu_JT) : {mu_jt * 1e6:.4f} K/MPa")
-        if mu_jt > 0:
-            print("-> Effect: The gas WILL COOL DOWN upon isoenthalpic expansion (throttling valve).")
-        else:
-            print("-> Effect: The gas WILL HEAT UP upon isoenthalpic expansion (throttling valve).")
-
-        # 5. Robustness Validation Test
-        print("\n--- System Robustness Check ---")
-        try:
-            calculate_residual_properties(-5000, test_T, t_crit, p_crit, acentric)
-        except ValueError as e:
-            print(f"Boundary protection active: {e}")
-
-    except Exception as e:
-        print(f"An unexpected error occurred in the system: {e}")
-        import numpy as np
-import CoolProp.CoolProp as CP
-from typing import List, Tuple, Dict
-
-# Universal gas constant in J/(mol*K)
-UNIVERSAL_GAS_CONSTANT = 8.314462618
-
 
 def get_mixture_pure_properties(fluids: List[str]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -387,48 +250,3 @@ def calculate_mixture_properties(
         "mixture_Sr_J_molK": s_res_mix,
         "mixture_V_m3_mol": v_molar_mix
     }
-
-
-# --- Execution and Demonstration Entry Point ---
-if __name__ == "__main__":
-    print("=========================================================")
-    print("   MULTICOMPONENT MIXTURE EOS SOLVER (PENG-ROBINSON)    ")
-    print("=========================================================\n")
-
-    # Target Mixture Definition: Natural Gas Surrogate (3 components)
-    gas_components = ["Methane", "Ethane", "Propane"]
-    fractions = [0.85, 0.10, 0.05]  # 85% CH4, 10% C2H6, 5% C3H8
-    
-    # Symmetric Binary Interaction Parameter Matrix (kij)
-    # Row/Col order follows gas_components layout
-    kij = np.array([
-        [0.000, 0.002, 0.005],  # CH4 interactions
-        [0.002, 0.000, 0.001],  # C2H6 interactions
-        [0.005, 0.001, 0.000]   # C3H8 interactions
-    ])
-
-    # Simulation conditions (High-pressure pipeline simulation state)
-    system_T = 290.0      # Kelvin
-    system_P = 6.5e6      # 65.0 bar (6,500,000 Pa)
-
-    try:
-        results = calculate_mixture_properties(system_P, system_T, gas_components, fractions, kij)
-        
-        print("--- Gas Composition Stream ---")
-        for comp, frac in zip(gas_components, fractions):
-            print(f" * {comp:<8}: {frac*100:>5.1f}%")
-            
-        print(f"\n--- System State Conditions: {system_T} K @ {system_P/1e5:.1f} bar ---")
-        print(f"Mixture Compressibility Factor (Z) : {results['mixture_Z']:.5f}")
-        print(f"Mixture Molar Volume (V_m)         : {results['mixture_V_m3_mol']:.7f} m^3/mol")
-        print(f"Mixture Residual Enthalpy (H^R)    : {results['mixture_Hr_J_mol']:.2f} J/mol")
-        print(f"Mixture Residual Entropy (S^R)     : {results['mixture_Sr_J_molK']:.2f} J/(mol*K)")
-
-        # Boundary Protection Check
-        print("\n--- System Boundary Check ---")
-        calculate_mixture_properties(system_P, system_T, gas_components, [0.5, 0.5, 0.1], kij) # Bad fractions
-
-    except ValueError as e:
-        print(f"Boundary protection active: {e}")
-    except Exception as e:
-        print(f"An unexpected system failure occurred: {e}")
