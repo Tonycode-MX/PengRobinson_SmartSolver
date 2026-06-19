@@ -1,252 +1,410 @@
 import numpy as np
-import CoolProp.CoolProp as CP
-from typing import Tuple, Dict, List
+import scipy.optimize as opt
+from typing import Dict, List, Any, Tuple
 
-from eos import calculate_advanced_pr_parameters, calculate_compressibility_factor
+from .eos import (
+    UNIVERSAL_GAS_CONSTANT,
+    calculate_volume,
+    calculate_pressure,
+    calculate_pr_parameters,
+    calculate_compressibility_factor
+)
 
-# Universal gas constant in J/(mol*K)
-UNIVERSAL_GAS_CONSTANT = 8.314462618
-
-def calculate_residual_properties(
-    pressure: float, temperature: float, tc: float, pc: float, omega: float
-) -> Dict[str, float]:
+"""
+PR-SmartSolver Path Functions & Process Simulators.
+Computes thermodynamic trajectories (Isobaric, Isothermal, Isochoric, Adiabatic-Isentropic)
+for real fluids and multicomponent mixtures using the Peng-Robinson Cubic EOS.
+All internal metadata and dictionary keys are strictly in English to match repository standards.
+"""
+def _calculate_residual_properties(
+    pressure: float,
+    temperature: float,
+    volume: float,
+    fluids: List[str],
+    fractions: List[float],
+    kij_matrix: np.ndarray
+) -> Tuple[float, float, float]:
     """
-    Calculates advanced residual thermodynamic properties using the Peng-Robinson EOS.
+    Calculates the exact analytical residual Enthalpy (H^R), Entropy (S^R), and 
+    Gibbs Free Energy (G^R) for a single component or multicomponent mixture.
+
+    This internal helper function applies the Peng-Robinson Equation of State (EOS) 
+    analytical derivations to compute the deviation of the thermodynamic properties 
+    from an ideal gas behavior at the same temperature and pressure.
 
     Args:
-        pressure (float): Pressure in Pascals (Pa).
-        temperature (float): Absolute temperature in Kelvin (K).
-        tc (float): Critical temperature (K).
-        pc (float): Critical pressure (Pa).
-        omega (float): Acentric factor.
+        pressure (float): Absolute pressure of the system in Pascals (Pa).
+        temperature (float): Absolute temperature of the system in Kelvin (K).
+        volume (float): Molar volume of the system in cubic meters per mole (m^3/mol).
+        fluids (List[str]): List of fluid names recognized by CoolProp.
+        fractions (List[float]): Molar fractions of each component in the mixture.
+        kij_matrix (np.ndarray): A 2D symmetric NumPy array of shape (n, n) representing 
+                                 the binary interaction parameters (k_ij).
 
     Returns:
-        Dict[str, float]: Dictionary containing Z, Fugacity coeff, Residual H, Residual S, and V.
+        Tuple[float, float, float]: A tuple containing the residual properties:
+            - h_res (float): Residual Enthalpy (H^R) in Joules per mole (J/mol).
+            - s_res (float): Residual Entropy (S^R) in Joules per mole-Kelvin (J/(mol*K)).
+            - g_res (float): Residual Gibbs Free Energy (G^R) in Joules per mole (J/mol).
+
+    Raises:
+        ValueError: If pressure, temperature, or molar volume are less than or equal to zero.
+        ValueError: If the molar volume is less than or equal to the mixture co-volume (b_m), 
+                    which violates physical boundaries and results in a math domain error 
+                    (negative logarithm arguments in the S^R and H^R calculations).
+        ValueError: If there is a dimension mismatch between fluids, fractions, and kij_matrix,
+                    or if fractions are invalid (propagated from `calculate_pr_parameters`).
     """
-    if pressure <= 0 or temperature <= 0:
-        raise ValueError("Pressure and temperature must be strictly positive.")
+    a_m, b_m, da_dT_m = calculate_pr_parameters(temperature, fluids, fractions, kij_matrix)
+    Z = (pressure * volume) / (UNIVERSAL_GAS_CONSTANT * temperature)
+    
+    sqrt2 = np.sqrt(2.0)
+    ln_term = np.log((volume + b_m * (1.0 + sqrt2)) / (volume + b_m * (1.0 - sqrt2)))
+    
+    # Enthalpy Residual (H^R) analytical expression
+    h_res = (UNIVERSAL_GAS_CONSTANT * temperature * (Z - 1.0) + 
+             (temperature * da_dT_m - a_m) / (2.0 * sqrt2 * b_m) * ln_term)
+    
+    # Entropy Residual (S^R) analytical expression
+    s_res = (UNIVERSAL_GAS_CONSTANT * np.log(Z - (b_m * pressure / (UNIVERSAL_GAS_CONSTANT * temperature))) + 
+             da_dT_m / (2.0 * sqrt2 * b_m) * ln_term)
+    
+    # Gibbs Free Energy Residual (G^R = H^R - T*S^R)
+    g_res = h_res - temperature * s_res
+    
+    return h_res, s_res, g_res
 
-    # 1. Compute fundamental and derivative EOS parameters
-    a, b, da_dT = calculate_advanced_pr_parameters(temperature, tc, pc, omega)
-    z = calculate_compressibility_factor(pressure, temperature, a, b)
 
-    # Dimensionless EOS parameters
-    A = (a * pressure) / (UNIVERSAL_GAS_CONSTANT**2 * temperature**2)
-    B = (b * pressure) / (UNIVERSAL_GAS_CONSTANT * temperature)
+def simulate_isobaric_process(
+    pressure: float,
+    t_start: float,
+    t_end: float,
+    fluids: List[str],
+    fractions: List[float],
+    kij_matrix: np.ndarray,
+    points: int = 20
+) -> Dict[str, Any]:
+    """
+    Simulates an isobaric (constant pressure) thermodynamic heating or cooling trajectory.
 
-    # 2. Fugacity Coefficient (phi) Calculation
-    sqrt_2 = np.sqrt(2)
-    term_fug_1 = z - 1 - np.log(z - B)
-    term_fug_2 = (A / (2 * sqrt_2 * B)) * np.log((z + (1 + sqrt_2) * B) / (z + (1 - sqrt_2) * B))
-    ln_phi = term_fug_1 - term_fug_2
-    phi = np.exp(ln_phi)
+    This function calculates the evolution of the compressibility factor (Z), 
+    molar volume (V), and the relative change in residual enthalpy (\Delta H^R) 
+    across a defined temperature range. The simulation provides an array of states 
+    that can be directly plotted or analyzed by downstream tools.
 
-    # 3. Residual Enthalpy (H^R) Calculation in J/mol
-    term_h_1 = UNIVERSAL_GAS_CONSTANT * temperature * (z - 1)
-    term_h_2 = (temperature * da_dT - a) / (2 * sqrt_2 * b)
-    term_h_3 = np.log((z + (1 + sqrt_2) * B) / (z + (1 - sqrt_2) * B))
-    h_residual = term_h_1 + term_h_2 * term_h_3
+    Args:
+        pressure (float): Constant absolute pressure of the system in Pascals (Pa).
+        t_start (float): Initial absolute temperature in Kelvin (K).
+        t_end (float): Final absolute temperature in Kelvin (K).
+        fluids (List[str]): List of fluid names recognized by CoolProp.
+        fractions (List[float]): Molar fractions of each component in the mixture.
+        kij_matrix (np.ndarray): A 2D symmetric NumPy array of shape (n, n) representing 
+                                 the binary interaction parameters (k_ij).
+        points (int, optional): Number of discrete temperature points to simulate 
+                                along the trajectory. Defaults to 20.
 
-    # 4. Residual Entropy (S^R) Calculation in J/(mol*K)
-    term_s_1 = UNIVERSAL_GAS_CONSTANT * np.log(z - B)
-    term_s_2 = da_dT / (2 * sqrt_2 * b)
-    term_s_3 = np.log((z + (1 + sqrt_2) * B) / (z + (1 - sqrt_2) * B))
-    s_residual = term_s_1 + term_s_2 * term_s_3
+    Returns:
+        Dict[str, Any]: A dictionary containing the simulation trajectory arrays:
+            - 'process' (str): The name of the simulated process ("Isobaric").
+            - 'x_axis_name' (str): Label for the independent variable ("Temperature (K)").
+            - 'x_values' (List[float]): The discrete temperature points evaluated (K).
+            - 'z_factors' (List[float]): Compressibility factors (Z) at each evaluated point.
+            - 'volumes_m3_mol' (List[float]): Molar volumes at each point (m^3/mol).
+            - 'delta_H_J_mol' (List[float]): Change in residual enthalpy relative to 
+                                             the initial state (t_start) in J/mol.
 
-    # Derived molar volume for subsequent thermal calculations
-    v_molar = z * UNIVERSAL_GAS_CONSTANT * temperature / pressure
-
+    Raises:
+        ValueError: If `pressure`, `t_start`, or `t_end` are less than or equal to zero.
+        ValueError: Propagates EOS errors if physical boundaries are violated during 
+                    the simulation (e.g., if volume attempts to drop below co-volume b_m).
+    """
+    if pressure <= 0 or t_start <= 0 or t_end <= 0:
+        raise ValueError("Pressure and Temperatures must be strictly positive.")
+        
+    t_space = np.linspace(t_start, t_end, points)
+    
+    z_factors: List[float] = []
+    volumes: List[float] = []
+    delta_H: List[float] = []
+    
+    v_init = calculate_volume(pressure, t_start, fluids, fractions, kij_matrix)
+    h_init, _, _ = _calculate_residual_properties(pressure, t_start, v_init, fluids, fractions, kij_matrix)
+    
+    for t in t_space:
+        v = calculate_volume(pressure, t, fluids, fractions, kij_matrix)
+        z = (pressure * v) / (UNIVERSAL_GAS_CONSTANT * t)
+        h_res, _, _ = _calculate_residual_properties(pressure, t, v, fluids, fractions, kij_matrix)
+        
+        volumes.append(float(v))
+        z_factors.append(float(z))
+        delta_H.append(float(h_res - h_init))
+        
     return {
-        "compressibility_factor_Z": z,
-        "fugacity_coefficient_phi": phi,
-        "residual_enthalpy_Hr": h_residual,
-        "residual_entropy_Sr": s_residual,
-        "molar_volume_V": v_molar,
+        "process": "Isobaric",
+        "x_axis_name": "Temperature (K)",
+        "x_values": t_space.tolist(),
+        "z_factors": z_factors,
+        "volumes_m3_mol": volumes,
+        "delta_H_J_mol": delta_H
+    }
+
+def simulate_isothermal_process(
+    temperature: float,
+    p_start: float,
+    p_end: float,
+    fluids: List[str],
+    fractions: List[float],
+    kij_matrix: np.ndarray,
+    points: int = 20
+) -> Dict[str, Any]:
+    """
+    Simulates an isothermal (constant temperature) thermodynamic trajectory.
+
+    This function calculates the evolution of the compressibility factor (Z), 
+    molar volume (V), and the relative change in residual Gibbs Free Energy (\Delta G^R) 
+    across a defined pressure range. Tracking the shifts in Gibbs Free Energy is 
+    particularly valuable for evaluating phase stability and the spontaneity of 
+    processes (e.g., in nanopores or separation units).
+
+    Args:
+        temperature (float): Constant absolute temperature of the system in Kelvin (K).
+        p_start (float): Initial absolute pressure of the system in Pascals (Pa).
+        p_end (float): Final absolute pressure of the system in Pascals (Pa).
+        fluids (List[str]): List of fluid names recognized by CoolProp.
+        fractions (List[float]): Molar fractions of each component in the mixture.
+        kij_matrix (np.ndarray): A 2D symmetric NumPy array of shape (n, n) representing 
+                                 the binary interaction parameters (k_ij).
+        points (int, optional): Number of discrete pressure points to simulate 
+                                along the trajectory. Defaults to 20.
+
+    Returns:
+        Dict[str, Any]: A dictionary containing the simulation trajectory arrays:
+            - 'process' (str): The name of the simulated process ("Isothermal").
+            - 'x_axis_name' (str): Label for the independent variable ("Pressure (Pa)").
+            - 'x_values' (List[float]): The discrete pressure points evaluated (Pa).
+            - 'z_factors' (List[float]): Compressibility factors (Z) at each evaluated point.
+            - 'volumes_m3_mol' (List[float]): Molar volumes at each point (m^3/mol).
+            - 'delta_G_J_mol' (List[float]): Change in residual Gibbs Free Energy relative to 
+                                             the initial state (p_start) in J/mol.
+
+    Raises:
+        ValueError: If `temperature`, `p_start`, or `p_end` are less than or equal to zero.
+        ValueError: Propagates EOS errors if physical boundaries are violated during 
+                    the simulation (e.g., if volume attempts to drop below co-volume b_m 
+                    at extreme pressures).
+    """
+    if temperature <= 0 or p_start <= 0 or p_end <= 0:
+        raise ValueError("Temperature and Pressures must be strictly positive.")
+        
+    p_space = np.linspace(p_start, p_end, points)
+    
+    z_factors: List[float] = []
+    volumes: List[float] = []
+    delta_G: List[float] = []
+    
+    v_init = calculate_volume(p_start, temperature, fluids, fractions, kij_matrix)
+    _, _, g_init = _calculate_residual_properties(p_start, temperature, v_init, fluids, fractions, kij_matrix)
+    
+    for p in p_space:
+        v = calculate_volume(p, temperature, fluids, fractions, kij_matrix)
+        z = (p * v) / (UNIVERSAL_GAS_CONSTANT * temperature)
+        _, _, g_res = _calculate_residual_properties(p, temperature, v, fluids, fractions, kij_matrix)
+        
+        volumes.append(float(v))
+        z_factors.append(float(z))
+        delta_G.append(float(g_res - g_init))
+        
+    return {
+        "process": "Isothermal",
+        "x_axis_name": "Pressure (Pa)",
+        "x_values": p_space.tolist(),
+        "z_factors": z_factors,
+        "volumes_m3_mol": volumes,
+        "delta_G_J_mol": delta_G
+    }
+
+def simulate_isochoric_process(
+    v_m3_mol: float,
+    t_start: float,
+    t_end: float,
+    fluids: List[str],
+    fractions: List[float],
+    kij_matrix: np.ndarray,
+    points: int = 20
+) -> Dict[str, Any]:
+    """
+    Simulates an isochoric (constant molar volume) thermodynamic heating or cooling trajectory.
+
+    This function evaluates the evolution of absolute pressure (P), compressibility 
+    factor (Z), and the relative change in internal energy (\Delta U) across a 
+    defined temperature range while keeping the molar volume strictly constant. 
+    The resulting arrays are formatted for downstream analysis or direct plotting.
+
+    Args:
+        v_m3_mol (float): Constant molar volume of the system in cubic meters per mole (m^3/mol).
+        t_start (float): Initial absolute temperature in Kelvin (K).
+        t_end (float): Final absolute temperature in Kelvin (K).
+        fluids (List[str]): List of fluid names recognized by CoolProp.
+        fractions (List[float]): Molar fractions of each component in the mixture.
+        kij_matrix (np.ndarray): A 2D symmetric NumPy array of shape (n, n) representing 
+                                 the binary interaction parameters (k_ij).
+        points (int, optional): Number of discrete temperature points to simulate 
+                                along the trajectory. Defaults to 20.
+
+    Returns:
+        Dict[str, Any]: A dictionary containing the simulation trajectory arrays:
+            - 'process' (str): The name of the simulated process ("Isochoric").
+            - 'x_axis_name' (str): Label for the independent variable ("Temperature (K)").
+            - 'x_values' (List[float]): The discrete temperature points evaluated (K).
+            - 'z_factors' (List[float]): Compressibility factors (Z) at each evaluated point.
+            - 'volumes_m3_mol' (List[float]): Constant molar volumes repeated for each point (m^3/mol).
+            - 'delta_U_J_mol' (List[float]): Change in internal energy relative to 
+                                             the initial state (t_start) in Joules per mole (J/mol).
+            - 'pressures_pa' (List[float]): Calculated absolute pressures at each point (Pa).
+
+    Raises:
+        ValueError: If `v_m3_mol`, `t_start`, or `t_end` are less than or equal to zero.
+        ValueError: Propagates EOS errors if the constant volume is mathematically 
+                    invalid (e.g., if v_m3_mol <= b_m).
+    """
+    if v_m3_mol <= 0 or t_start <= 0 or t_end <= 0:
+        raise ValueError("Molar volume and Temperatures must be strictly positive.")
+        
+    t_space = np.linspace(t_start, t_end, points)
+    
+    z_factors: List[float] = []
+    pressures: List[float] = []
+    delta_U: List[float] = []
+    
+    p_init = calculate_pressure(v_m3_mol, t_start, fluids, fractions, kij_matrix)
+    h_init, _, _ = _calculate_residual_properties(p_init, t_start, v_m3_mol, fluids, fractions, kij_matrix)
+    u_init = h_init - (p_init * v_m3_mol)
+    
+    for t in t_space:
+        p = calculate_pressure(v_m3_mol, t, fluids, fractions, kij_matrix)
+        z = (p * v_m3_mol) / (UNIVERSAL_GAS_CONSTANT * t)
+        h_res, _, _ = _calculate_residual_properties(p, t, v_m3_mol, fluids, fractions, kij_matrix)
+        u_res = h_res - (p * v_m3_mol)
+        
+        pressures.append(float(p))
+        z_factors.append(float(z))
+        delta_U.append(float(u_res - u_init))
+        
+    return {
+        "process": "Isochoric",
+        "x_axis_name": "Temperature (K)",
+        "x_values": t_space.tolist(),
+        "z_factors": z_factors,
+        "volumes_m3_mol": [v_m3_mol] * points,
+        "delta_U_J_mol": delta_U,
+        "pressures_pa": pressures
     }
 
 
-def calculate_joule_thomson(
-    pressure: float, temperature: float, tc: float, pc: float, omega: float, cp_ideal: float
-) -> float:
+def simulate_adiabatic_process(
+    p_start: float,
+    p_end: float,
+    t_start: float,
+    fluids: List[str],
+    fractions: List[float],
+    kij_matrix: np.ndarray,
+    points: int = 20
+) -> Dict[str, Any]:
     """
-    Calculates the Joule-Thomson Coefficient (mu_JT) in K/Pa.
-    Requires the ideal gas Cp of the substance at the given temperature.
-    """
-    # Numerical differentiation to find (dV/dT)_P
-    dT = 1e-3
-    props_low = calculate_residual_properties(pressure, temperature - dT, tc, pc, omega)
-    props_high = calculate_residual_properties(pressure, temperature + dT, tc, pc, omega)
-    
-    v_low = props_low["molar_volume_V"]
-    v_high = props_high["molar_volume_V"]
-    
-    # Partial derivative (dV/dT) at constant Pressure
-    dv_dT_p = (v_high - v_low) / (2 * dT)
+    Simulates a reversible adiabatic (isentropic) thermodynamic trajectory.
 
-    # Extract central state properties
-    props_central = calculate_residual_properties(pressure, temperature, tc, pc, omega)
-    v_molar = props_central["molar_volume_V"]
-    
-    # Correct ideal Cp to real Cp: Cp_real = Cp_ideal + d(H^R)/dT
-    h_low = props_low["residual_enthalpy_Hr"]
-    h_high = props_high["residual_enthalpy_Hr"]
-    dHr_dT_p = (h_high - h_low) / (2 * dT)
-    cp_real = cp_ideal + dHr_dT_p
+    This function calculates the temperature profile of a fluid undergoing an 
+    adiabatic compression or expansion where the entropy change is zero (\Delta S = 0). 
+    It uses a numerical root-finding algorithm (Secant method) to iteratively solve 
+    for the exact temperature at each pressure step that maintains the initial 
+    residual entropy.
 
-    # Classical Joule-Thomson relation: mu_JT = (1 / Cp_real) * [ T * (dV/dT)_P - V ]
-    mu_jt = (1.0 / cp_real) * (temperature * dv_dT_p - v_molar)
-    return mu_jt
-
-def get_mixture_pure_properties(fluids: List[str]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Extracts critical properties (Tc, Pc, omega) for all pure components 
-    present in the chemical mixture using CoolProp.
+    It also calculates the steady-flow adiabatic work produced or consumed 
+    (W = \Delta H) based on the residual enthalpy shifts.
 
     Args:
-        fluids (List[str]): List of fluid names (e.g., ['Methane', 'Ethane', 'CO2']).
+        p_start (float): Initial absolute pressure of the system in Pascals (Pa).
+        p_end (float): Final absolute pressure of the system in Pascals (Pa).
+        t_start (float): Initial absolute temperature in Kelvin (K).
+        fluids (List[str]): List of fluid names recognized by CoolProp.
+        fractions (List[float]): Molar fractions of each component in the mixture.
+        kij_matrix (np.ndarray): A 2D symmetric NumPy array representing the 
+                                 binary interaction parameters (k_ij).
+        points (int, optional): Number of discrete pressure points to simulate 
+                                along the trajectory. Defaults to 20.
 
     Returns:
-        Tuple[np.ndarray, np.ndarray, np.ndarray]: Arrays of Tc (K), Pc (Pa), and omega.
+        Dict[str, Any]: A dictionary containing the simulation trajectory arrays:
+            - 'process' (str): The name of the simulated process ("Adiabatic").
+            - 'x_axis_name' (str): Label for the independent variable ("Pressure (Pa)").
+            - 'x_values' (List[float]): The discrete pressure points evaluated (Pa).
+            - 'z_factors' (List[float]): Compressibility factors (Z) at each evaluated point.
+            - 'volumes_m3_mol' (List[float]): Molar volumes at each point (m^3/mol).
+            - 'temperatures_K' (List[float]): Calculated isentropic temperatures (K).
+            - 'work_produced_J_mol' (List[float]): Cumulative steady-flow work produced 
+                                                   or consumed (J/mol), calculated as (H_init - H_real).
+
+    Raises:
+        ValueError: If `p_start`, `p_end`, or `t_start` are less than or equal to zero.
+        ValueError: If the numerical Secant solver fails to converge on a valid 
+                    isentropic temperature for any given pressure point.
     """
-    tc_list, pc_list, omega_list = [], [], []
-    for fluid in fluids:
-        try:
-            tc_list.append(CP.PropsSI("Tcrit", fluid))
-            pc_list.append(CP.PropsSI("pcrit", fluid))
-            omega_list.append(CP.PropsSI("acentric", fluid))
-        except ValueError as e:
-            raise ValueError(f"Fluid '{fluid}' is not recognized in CoolProp database. Error: {e}")
+    if p_start <= 0 or p_end <= 0 or t_start <= 0:
+        raise ValueError("Pressures and Initial Temperature must be strictly positive.")
+        
+    p_space = np.linspace(p_start, p_end, points)
+    
+    v_init = calculate_volume(p_start, t_start, fluids, fractions, kij_matrix)
+    h_init, s_target, _ = _calculate_residual_properties(p_start, t_start, v_init, fluids, fractions, kij_matrix)
+    
+    z_factors: List[float] = []
+    volumes: List[float] = []
+    temperatures: List[float] = []
+    work_produced: List[float] = []
+    
+    t_guess = t_start
+    
+    for p in p_space:
+        def entropy_objective(t_est: float) -> float:
+            if t_est <= 0:
+                return 1e9
+            try:
+                v_est = calculate_volume(p, t_est, fluids, fractions, kij_matrix)
+                _, s_est, _ = _calculate_residual_properties(p, t_est, v_est, fluids, fractions, kij_matrix)
+                return s_est - s_target
+            except ValueError:
+                return 1e9
+
+        sol = opt.root_scalar(
+            entropy_objective, 
+            x0=t_guess, 
+            x1=t_guess + 1.0, 
+            method='secant', 
+            xtol=1e-5, 
+            maxiter=50
+        )
+        
+        if not sol.converged:
+            raise ValueError(f"Isentropic convergence failure at pressure P={p:.2e} Pa.")
             
-    return np.array(tc_list), np.array(pc_list), np.array(omega_list)
-
-
-def calculate_pure_pr_parameters(
-    temperature: float, tc: np.ndarray, pc: np.ndarray, omega: np.ndarray
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Calculates the individual 'a', 'b' and analytical temperature derivative (da/dT)
-    vectors for all components at the system temperature.
-    """
-    if temperature <= 0:
-        raise ValueError("System temperature must be strictly positive (T > 0).")
-
-    tr = temperature / tc
-    kappa = 0.37464 + 1.54226 * omega - 0.26992 * omega**2
-    alpha = (1 + kappa * (1 - np.sqrt(tr))) ** 2
-
-    a_pure = 0.45724 * (UNIVERSAL_GAS_CONSTANT**2 * tc**2) / pc * alpha
-    b_pure = 0.07780 * (UNIVERSAL_GAS_CONSTANT * tc) / pc
-
-    # Analytical temperature derivative of alpha parameter: d(alpha)/dT
-    dalpha_dT = -kappa * (1 + kappa * (1 - np.sqrt(tr))) / (tc * np.sqrt(tr))
-    # Analytical temperature derivative of attraction parameter: da/dT
-    da_dT_pure = 0.45724 * (UNIVERSAL_GAS_CONSTANT**2 * tc**2) / pc * dalpha_dT
-
-    return a_pure, b_pure, da_dT_pure
-
-
-def apply_van_der_waals_mixing_rules(
-    mole_fractions: np.ndarray, a_pure: np.ndarray, b_pure: np.ndarray, 
-    da_dT_pure: np.ndarray, kij_matrix: np.ndarray
-) -> Tuple[float, float, float]:
-    """
-    Applies classical van der Waals mixing rules to evaluate the mixture parameters 
-    am (attraction), bm (covolume), and the overall temperature derivative dam/dT.
-    """
-    num_components = len(mole_fractions)
-    
-    # 1. Mixture covolume (bm) - Linear scaling rule
-    bm = float(np.sum(mole_fractions * b_pure))
-    
-    # 2. Mixture attraction (am) and derivative (dam_dT) via cross-interactions matrix
-    am = 0.0
-    dam_dT = 0.0
-    
-    for i in range(num_components):
-        for j in range(num_components):
-            # Cross-attraction parameter (Geometric mean rule corrected by kij)
-            a_ij = np.sqrt(a_pure[i] * a_pure[j]) * (1.0 - kij_matrix[i, j])
-            am += mole_fractions[i] * mole_fractions[j] * a_ij
-            
-            # Analytical derivative of cross-attraction: da_ij/dT
-            # d(sqrt(a_i*a_j))/dT = 0.5 * (a_j*da_i/dT + a_i*da_j/dT) / sqrt(a_i*a_j)
-            da_ij_dT = 0.5 * (a_pure[j] * da_dT_pure[i] + a_pure[i] * da_dT_pure[j]) / np.sqrt(a_pure[i] * a_pure[j])
-            da_ij_dT_corrected = da_ij_dT * (1.0 - kij_matrix[i, j])
-            dam_dT += mole_fractions[i] * mole_fractions[j] * da_ij_dT_corrected
-
-    return am, bm, dam_dT
-
-
-def calculate_mixture_z_factor(pressure: float, temperature: float, am: float, bm: float) -> float:
-    """
-    Solves the cubic Peng-Robinson EOS polynomial using unified mixture parameters 
-    to extract the real compressibility factor (Z).
-    """
-    A = (am * pressure) / (UNIVERSAL_GAS_CONSTANT**2 * temperature**2)
-    B = (bm * pressure) / (UNIVERSAL_GAS_CONSTANT * temperature)
-
-    # Polynomial coefficients layout: Z^3 + c2*Z^2 + c1*Z + c0 = 0
-    c2 = -(1.0 - B)
-    c1 = A - 2.0 * B - 3.0 * B**2
-    c0 = -(A * B - B**2 - B**3)
-
-    roots_z = np.roots([1.0, c2, c1, c0])
-    real_roots = [z.real for z in roots_z if abs(z.imag) < 1e-9 and z.real > 0]
-
-    if not real_roots:
-        raise ValueError("Thermodynamic state error: No valid positive roots found for mixture Z.")
-
-    return max(real_roots)
-
-
-def calculate_mixture_properties(
-    pressure: float, temperature: float, fluids: List[str], mole_fractions: List[float], kij_matrix: np.ndarray
-) -> Dict[str, float]:
-    """
-    Master function to solve the thermodynamic equation of state for a multicomponent gas.
-
-    Returns a comprehensive dictionary with unified system attributes.
-    """
-    x = np.array(mole_fractions)
-    if not np.isclose(np.sum(x), 1.0):
-        raise ValueError("Composition definition error: Mole fractions must sum up to exactly 1.0.")
-    if pressure <= 0:
-        raise ValueError("System pressure must be strictly positive (P > 0).")
-
-    # 1. Fetch pure data and solve local parameters
-    tc, pc, omega = get_mixture_pure_properties(fluids)
-    a_p, b_p, da_dT_p = calculate_pure_pr_parameters(temperature, tc, pc, omega)
-    
-    # 2. Merge properties using mixing rules
-    am, bm, dam_dT = apply_van_der_waals_mixing_rules(x, a_p, b_p, da_dT_p, kij_matrix)
-    
-    # 3. Solve master mixture Z-factor
-    z_mixture = calculate_mixture_z_factor(pressure, temperature, am, bm)
-
-    # 4. Dimensionless system parameters
-    A = (am * pressure) / (UNIVERSAL_GAS_CONSTANT**2 * temperature**2)
-    B = (bm * pressure) / (UNIVERSAL_GAS_CONSTANT * temperature)
-    
-    # 5. Extract caloric residual attributes for the mixture
-    sqrt_2 = np.sqrt(2)
-    log_term = np.log((z_mixture + (1 + sqrt_2) * B) / (z_mixture + (1 - sqrt_2) * B))
-    
-    # Combined Residual Enthalpy (Hm^R)
-    term_h1 = UNIVERSAL_GAS_CONSTANT * temperature * (z_mixture - 1.0)
-    term_h2 = (temperature * dam_dT - am) / (2.0 * sqrt_2 * bm)
-    h_res_mix = term_h1 + term_h2 * log_term
-    
-    # Combined Residual Entropy (Sm^R)
-    term_s1 = UNIVERSAL_GAS_CONSTANT * np.log(z_mixture - B)
-    term_s2 = dam_dT / (2.0 * sqrt_2 * bm)
-    s_res_mix = term_s1 + term_s2 * log_term
-
-    # Unified real molar volume
-    v_molar_mix = z_mixture * UNIVERSAL_GAS_CONSTANT * temperature / pressure
-
+        t_real = float(sol.root)
+        v_real = calculate_volume(p, t_real, fluids, fractions, kij_matrix)
+        z_real = (p * v_real) / (UNIVERSAL_GAS_CONSTANT * t_real)
+        h_real, _, _ = _calculate_residual_properties(p, t_real, v_real, fluids, fractions, kij_matrix)
+        
+        temperatures.append(t_real)
+        volumes.append(v_real)
+        z_factors.append(z_real)
+        work_produced.append(float(h_init - h_real))
+        
+        t_guess = t_real
+        
     return {
-        "mixture_Z": z_mixture,
-        "mixture_Hr_J_mol": h_res_mix,
-        "mixture_Sr_J_molK": s_res_mix,
-        "mixture_V_m3_mol": v_molar_mix
+        "process": "Adiabatic",
+        "x_axis_name": "Pressure (Pa)",
+        "x_values": p_space.tolist(),
+        "z_factors": z_factors,
+        "volumes_m3_mol": volumes,
+        "temperatures_K": temperatures,
+        "work_produced_J_mol": work_produced
     }
