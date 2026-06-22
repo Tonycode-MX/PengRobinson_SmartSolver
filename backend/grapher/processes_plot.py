@@ -158,7 +158,7 @@ if __name__ == "__main__":
     print("📊 Executing standalone Plotter validation...")
     
     # Ensure this script is executed from the project root for the import to resolve
-    from core_math.processes import simulate_adiabatic_process
+    from thermo_core.processes import simulate_adiabatic_process
     import numpy as np
     
     test_fluids = ["Water", "CarbonDioxide"]
