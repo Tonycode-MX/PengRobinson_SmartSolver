@@ -2,7 +2,7 @@ from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate
 
 from agents.llm_setup import llm
-from agents.thermo_tools import thermo_specialist_tool
+from backend.agents.thermo_specialist import thermo_specialist_tool
 
 # =====================================================================
 # ORCHESTRATOR AGENT CONFIGURATION (MAIN BRAIN)
