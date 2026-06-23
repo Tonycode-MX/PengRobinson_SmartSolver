@@ -1,4 +1,6 @@
+from langchain_core.tools import tool
 
+@tool
 def convert_temperature_to_si(value: float, from_unit: str) -> float:
     """
     Converts temperature to the base SI unit Kelvin (K).
@@ -43,6 +45,7 @@ def convert_temperature_to_si(value: float, from_unit: str) -> float:
         
     return kelvin_value
 
+@tool
 def convert_pressure_to_si(value: float, from_unit: str) -> float:
     """
     Converts pressure to the base SI unit Pascals (Pa). 
@@ -98,6 +101,7 @@ def convert_pressure_to_si(value: float, from_unit: str) -> float:
     return pa_value
 
 
+@tool
 def convert_volume_to_si(value: float, from_unit: str) -> float:
     """
     Converts total volume to the base SI unit cubic meters (m^3).
@@ -145,6 +149,7 @@ def convert_volume_to_si(value: float, from_unit: str) -> float:
     return m3_value
 
 
+@tool
 def convert_molar_volume_to_si(value: float, from_unit: str) -> float:
     """
     Converts molar volume to the base SI unit cubic meters per mole (m^3/mol).
@@ -194,6 +199,7 @@ def convert_molar_volume_to_si(value: float, from_unit: str) -> float:
     return m3_mol_value
 
 
+@tool
 def convert_energy_to_si(value: float, from_unit: str) -> float:
     """
     Converts total energy (Work, Heat, etc.) to the base SI unit Joules (J).
@@ -244,6 +250,7 @@ def convert_energy_to_si(value: float, from_unit: str) -> float:
     return j_value
 
 
+@tool
 def convert_molar_energy_to_si(value: float, from_unit: str) -> float:
     """
     Converts molar energy (Enthalpy, Gibbs, Helmholtz, Internal Energy) 
@@ -290,6 +297,7 @@ def convert_molar_energy_to_si(value: float, from_unit: str) -> float:
     return j_mol_value
 
 
+@tool
 def convert_molar_entropy_to_si(value: float, from_unit: str) -> float:
     """
     Converts molar entropy or heat capacity to the base SI unit Joules per mole-Kelvin (J/(mol*K)).
@@ -337,6 +345,7 @@ def convert_molar_entropy_to_si(value: float, from_unit: str) -> float:
     return j_mol_k_value
 
 
+@tool
 def convert_amount_to_moles(value: float, from_unit: str) -> float:
     """
     Converts substance amount to the base SI unit moles (mol).
@@ -385,3 +394,14 @@ def convert_amount_to_moles(value: float, from_unit: str) -> float:
         )
         
     return mol_value
+
+conversion_tools_list = [
+    convert_temperature_to_si,
+    convert_pressure_to_si,
+    convert_volume_to_si,
+    convert_molar_volume_to_si,
+    convert_energy_to_si,
+    convert_molar_energy_to_si,
+    convert_molar_entropy_to_si,
+    convert_amount_to_moles
+]
