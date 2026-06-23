@@ -2,7 +2,7 @@ from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate
 
 from agents.llm_setup import llm
-from backend.agents.thermo_specialist import thermo_specialist_tool
+from agents.thermo_specialist import thermo_specialist_tool
 
 # =====================================================================
 # ORCHESTRATOR AGENT CONFIGURATION (MAIN BRAIN)
@@ -27,7 +27,7 @@ orchestrator_prompt = ChatPromptTemplate.from_messages([
     ("placeholder", "{agent_scratchpad}"),
 ])
 
-orchestrator_tools = [thermo_specialist_tool] # Aquí agregarás el de Monte Carlo después
+orchestrator_tools = [thermo_specialist_tool]
 
 orchestrator_agent = create_tool_calling_agent(llm, orchestrator_tools, orchestrator_prompt)
 orchestrator_executor = AgentExecutor(agent=orchestrator_agent, tools=orchestrator_tools, verbose=True)
