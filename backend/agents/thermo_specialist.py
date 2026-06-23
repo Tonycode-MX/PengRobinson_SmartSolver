@@ -232,19 +232,14 @@ thermo_prompt = ChatPromptTemplate.from_messages([
 thermo_agent = create_tool_calling_agent(llm, thermo_tools, thermo_prompt)
 thermo_executor = AgentExecutor(agent=thermo_agent, tools=thermo_tools, verbose=True)
 
-def route_to_thermodynamics(query: str) -> str:
-    """AI TOOL: Routes extracted thermodynamic parameters to the Thermodynamic Specialist Agent."""
+@tool(return_direct=True)
+def thermo_specialist_tool(query: str) -> str:
+    """
+    Use this tool ONLY when the user's problem involves real gases, 
+    the Peng-Robinson Equation of State (EOS), macroscopic thermodynamic 
+    trajectories (e.g., isobaric, isothermal, isochoric, adiabatic), or 
+    P-V-T state properties. You MUST pass the fully extracted problem details 
+    as the input, including fluid names in standard English, molar fractions, 
+    and exact state variables with their original units (including volume or molar volume if provided).
+    """
     return thermo_executor.invoke({"input": query})["output"]
-
-thermo_specialist_tool = Tool(
-    name="Thermodynamics_Specialist",
-    func=route_to_thermodynamics,
-    description=(
-        "Use this tool ONLY when the user's problem involves real gases, "
-        "the Peng-Robinson Equation of State (EOS), macroscopic thermodynamic "
-        "trajectories (e.g., isobaric, isothermal, isochoric, adiabatic), or "
-        "P-V-T state properties. You MUST pass the fully extracted problem details "
-        "as the input, including fluid names in standard English, molar fractions, "
-        "and exact state variables with their original units (including volume or molar volume if provided)."
-    )
-)

@@ -21,6 +21,9 @@ orchestrator_prompt = ChatPromptTemplate.from_messages([
     - For real gases, Peng-Robinson Equation of State, and macroscopic processes -> Call 'Thermodynamics_Specialist'.
     - For molecular interactions, particles, or Lennard-Jones potentials -> Call 'Statistical_Specialist' (Note: If this tool is not yet available in your list, inform the user it is under development).
     
+    CRITICAL TERMINATION RULE:
+    When a Specialist returns a summary of the simulation results, YOUR JOB IS DONE. Do NOT route the results back to the Specialist. Simply output the exact summary provided by the Specialist to the user and stop.),
+    
     Format the extracted data clearly and pass it as a detailed briefing to the appropriate tool. Do NOT attempt to solve the thermodynamic equations or conversions yourself."""),
     ("placeholder", "{chat_history}"),
     ("human", "{input}"),
