@@ -12,7 +12,8 @@ orchestrator_prompt = ChatPromptTemplate.from_messages([
     Your objective is to read the user's problem, extract key information, and delegate the task to the correct Specialist.
     
     EXTRACTION RULES:
-    1. Identify the chemical fluids and translate them to standard English (e.g., "agua" -> "Water", "metano" -> "Methane").
+    EXTRACTION RULES:
+    1. Identify the chemical fluids and translate them to strict CoolProp standard string identifiers (e.g., "agua" -> "Water", "metano" -> "Methane", "Dióxido de Carbono" -> "CarbonDioxide"). NEVER use spaces in fluid names.
     2. Identify molar fractions (ensure they sum to 1.0).
     3. Extract ALL exact state variables and their original units provided by the user (Temperature, Pressure, AND Volume/Molar Volume).
     4. Identify the requested process type precisely (Isothermal, Isobaric, Adiabatic, or Isochoric).
