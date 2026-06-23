@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PR-SmartSolver Premium UI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    
+    <style>
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #09090b; /* zinc-950 */
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #27272a; /* zinc-800 */
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3f3f46; /* zinc-700 */
+        }
+        .glass-panel {
+            background: rgba(18, 18, 22, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+    </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 font-sans h-screen flex flex-col overflow-hidden antialiased selection:bg-emerald-500/20 selection:text-emerald-400">
+
+    <header class="glass-panel border-b border-zinc-800/80 p-4 shadow-xl shadow-black/20 flex-none sticky top-0 z-50">
+        <div class="container mx-auto flex justify-between items-center px-2">
+            <div class="flex items-center space-x-3">
+                <div class="h-8 w-8 rounded-lg bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/10">
+                    <span class="text-zinc-950 font-black font-mono text-sm">PR</span>
+                </div>
+                <div>
+                    <h1 class="text-base font-bold bg-gradient-to-r from-zinc-50 to-zinc-300 bg-clip-text text-transparent tracking-wide">PR-SmartSolver</h1>
+                    <p class="text-[10px] text-zinc-500 font-mono tracking-wider -mt-1 uppercase">Advanced Multi-Agent Framework</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-3">
+                <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shadow-lg shadow-emerald-500/50"></span>
+                <span class="text-xs font-mono bg-zinc-900 border border-zinc-800 text-zinc-400 px-3 py-1 rounded-md">v2.0-Production</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 flex overflow-hidden">
+        
+        <section class="w-[35%] flex flex-col border-r border-zinc-900 bg-zinc-900/40 flex-none overflow-hidden">
+            
+            <div id="chat-container" class="flex-1 p-6 overflow-y-auto space-y-6 bg-gradient-to-b from-transparent to-zinc-950/20">
+                <div class="flex items-start space-x-3 animate-fade-in">
+                    <div class="h-7 w-7 rounded-md bg-zinc-800 border border-zinc-700 flex items-center justify-center shadow flex-none">
+                        <span class="text-[10px] font-bold text-emerald-400 font-mono">AI</span>
+                    </div>
+                    <div class="bg-zinc-900/90 text-zinc-200 p-3.5 rounded-r-xl rounded-bl-xl max-w-[85%] text-xs shadow-md border border-zinc-800 leading-relaxed font-normal">
+                        Welcome to the PR-SmartSolver execution core. Please describe your mathematical modeling task, thermodynamic state problem, or transport matrix parameters below.
+                    </div>
+                </div>
+            </div>
+
+            <div class="h-52 bg-zinc-950 border-t border-zinc-900 flex flex-col flex-none shadow-2xl">
+                <div class="bg-zinc-900/60 px-4 py-2 border-b border-zinc-950 flex items-center justify-between flex-none">
+                    <div class="flex items-center space-x-1.5">
+                        <span class="w-2.5 h-2.5 rounded-full bg-red-500/70 inline-block"></span>
+                        <span class="w-2.5 h-2.5 rounded-full bg-yellow-500/70 inline-block"></span>
+                        <span class="w-2.5 h-2.5 rounded-full bg-green-500/70 inline-block"></span>
+                    </div>
+                    <span class="text-[10px] text-zinc-500 font-mono tracking-widest uppercase">Core Log Console</span>
+                    <div class="w-10"></div>
+                </div>
+                <div id="terminal-logs" class="p-4 font-mono text-[11px] text-zinc-400 overflow-y-auto flex-1 space-y-1.5 leading-relaxed bg-black/30">
+                    <div class="text-zinc-600 font-semibold border-b border-zinc-900 pb-1 mb-2 tracking-wider">[SYSTEM COMPILATION LOGS]</div>
+                    <div class="text-zinc-500">> System status: Initializing cognitive modules...</div>
+                    <div class="text-zinc-500">> Virtual environment hook synced with 'verano_env' parameters.</div>
+                    <div class="text-emerald-500/90">> Intelligent orchestrator online. Awaiting system instruction payloads.</div>
+                </div>
+            </div>
+
+            <div class="p-4 bg-zinc-950 border-t border-zinc-900 flex-none">
+                <form id="agent-prompt-form" class="flex items-center space-x-2 relative bg-zinc-900 border border-zinc-800 focus-within:border-emerald-500/40 focus-within:ring-1 focus-within:ring-emerald-500/20 rounded-xl px-3 py-1.5 transition-all duration-300">
+                    <input type="text" id="user-prompt-input" autocomplete="off"
+                           placeholder="Ask about isothermal compressions, exergy losses..." 
+                           class="flex-1 bg-transparent px-2 py-1.5 text-xs text-zinc-100 focus:outline-none placeholder-zinc-500 font-sans">
+                    <button type="submit" class="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold px-4 py-2 rounded-lg text-xs transition-all duration-200 shadow-md shadow-emerald-500/10 active:scale-95 flex-none font-sans uppercase tracking-wider">
+                        Send Prompt
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <section class="w-[65%] bg-zinc-950 p-6 flex flex-col overflow-hidden relative">
+            <div class="absolute inset-0 bg-[linear-gradient(to_right,#18181b_1px,transparent_1px),linear-gradient(to_bottom,#18181b_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none opacity-30"></div>
+            
+            <div class="w-full flex justify-between items-center mb-4 pb-3 border-b border-zinc-900 flex-none relative z-10">
+                <div class="flex items-center space-x-2">
+                    <span class="h-1.5 w-1.5 rounded-full bg-teal-400"></span>
+                    <h2 class="text-xs font-semibold uppercase tracking-widest text-zinc-400 font-mono">Dynamic Analytics Visualization Canvas</h2>
+                </div>
+                <div class="text-[10px] text-zinc-500 font-mono border border-zinc-800 px-2.5 py-0.5 rounded bg-zinc-900/50">Plotly.js Renderer v2.24</div>
+            </div>
+            
+            <div id="plotly-viewport-canvas" class="w-full flex-1 bg-zinc-900/20 border border-zinc-900/80 rounded-2xl flex flex-col items-center justify-center p-6 shadow-2xl relative z-10 backdrop-blur-sm overflow-hidden">
+                <div id="canvas-placeholder" class="text-center space-y-3 p-8 border border-dashed border-zinc-800 rounded-xl bg-zinc-950/40 max-w-sm max-h-xs">
+                    <svg class="mx-auto h-8 w-8 text-zinc-700 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v16.5M21 19.5H3.75M6.75 12l3-3 4.5 4.5 4.5-4.5" />
+                    </svg>
+                    <div class="space-y-1">
+                        <p class="text-zinc-500 text-xs font-medium font-mono uppercase tracking-wider">Awaiting Active Execution</p>
+                        <p class="text-zinc-600 text-[11px] font-sans leading-relaxed">Thermodynamic state curves, fluid residues calculations, and matrix profiles will render interactively inside this container viewport.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        document.getElementById('agent-prompt-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+            
+            const inputElement = document.getElementById('user-prompt-input');
+            const promptText = inputElement.value.trim();
+            if (!promptText) return;
+
+            const chatContainer = document.getElementById('chat-container');
+            const terminalLogs = document.getElementById('terminal-logs');
+            const canvasPlaceholder = document.getElementById('canvas-placeholder');
+            const plotlyCanvas = document.getElementById('plotly-viewport-canvas');
+
+            // 1. Render User message instantly inside Chat viewport
+            chatContainer.innerHTML += `
+                <div class="flex items-start justify-end space-x-3">
+                    <div class="bg-zinc-800 text-zinc-100 p-3.5 rounded-l-xl rounded-br-xl max-w-[85%] text-xs border border-zinc-700/60 text-left leading-relaxed shadow-md">
+                        ${promptText}
+                    </div>
+                    <div class="h-7 w-7 rounded-md bg-zinc-700 border border-zinc-600 flex items-center justify-center shadow flex-none">
+                        <span class="text-[10px] font-bold text-zinc-300 font-mono">USR</span>
+                    </div>
+                </div>
+            `;
+            
+            // 2. Stream client connection event logs to terminal window
+            const timestamp = new Date().toLocaleTimeString();
+            terminalLogs.innerHTML += `
+                <div class="text-zinc-500">[${timestamp}] >> Event listener captured outbound payload sequence.</div>
+                <div class="text-amber-500/90">[HTTP POST] >> Pushing structured JSON request stream to API Gateway router...</div>
+            `;
+
+            // Clear prompt bar field and scroll views down to terminal nodes
+            inputElement.value = '';
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            terminalLogs.scrollTop = terminalLogs.scrollHeight;
+
+            // 3. Asynchronous network fetch executing connection tunnel with Python REST backend
+            fetch('http://127.0.0.1:8000/api/v1/solve', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ prompt: promptText })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    // CORRECCIÓN: Comillas invertidas añadidas
+                    throw new Error(`HTTP transaction failure protocol: Status code ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.status === "success") {
+                    
+                    // A. Parse basic Markdown structure syntax from string into clean semantic HTML tags
+                    let formattedAgentResponse = data.agent_text_response
+                        .replace(/\*\*(.*?)\*\*/g, '<b class="text-emerald-400 font-semibold">$1</b>') // CORRECCIÓN: Regex para negritas
+                        .replace(/\n/g, '<br>');                                                        
+
+                    // B. Append final formatted AI Agent output message box bubble
+                    chatContainer.innerHTML += `
+                        <div class="flex items-start space-x-3 mt-4">
+                            <div class="h-7 w-7 rounded-md bg-zinc-800 border border-zinc-700 flex items-center justify-center shadow flex-none">
+                                <span class="text-[10px] font-bold text-emerald-400 font-mono">AI</span>
+                            </div>
+                            <div class="bg-zinc-900/90 text-zinc-200 p-3.5 rounded-r-xl rounded-bl-xl max-w-[85%] text-xs shadow-md border border-zinc-800 leading-relaxed font-normal">
+                                ${formattedAgentResponse}
+                            </div>
+                        </div>
+                    `;
+
+                    // C. Map background Python array strings logs line-by-line into terminal console
+                    if (data.terminal_logs && Array.isArray(data.terminal_logs)) {
+                        data.terminal_logs.forEach(logLine => {
+                            // CORRECCIÓN: Comillas invertidas añadidas
+                            terminalLogs.innerHTML += `<div class="text-zinc-400">> ${logLine}</div>`;
+                        });
+                    }
+                    // CORRECCIÓN: Comillas invertidas añadidas
+                    terminalLogs.innerHTML += `<div class="text-emerald-400 font-medium">> [SUCCESS] Cognitive LangChain core execution resolved perfectly.</div>`;
+
+                    // D. Safely clear vector placeholder graphics and activate interactive Plotly node map
+                    if (data.plotly_data && data.plotly_data.data) {
+                        if (canvasPlaceholder) {
+                            canvasPlaceholder.style.display = 'none';
+                        }
+                        
+                        // Execute Plotly.js canvas generation using backend multi-scale matrix dataset
+                        Plotly.newPlot(plotlyCanvas, data.plotly_data.data, data.plotly_data.layout, {
+                            responsive: true,
+                            displaylogo: false
+                        });
+                    }
+
+                } else {
+                    // CORRECCIÓN: Comillas invertidas añadidas
+                    terminalLogs.innerHTML += `<div class="text-red-400 font-medium">> [CORE LOGIC FAILURE] Exception reported: ${data.message}</div>`;
+                }
+
+                // Smoothly slide layout view positions down to tracking baselines
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                terminalLogs.scrollTop = terminalLogs.scrollHeight;
+            })
+            .catch(error => {
+                // Gracefully intercept hard system network timeouts or disconnection events
+                console.error("API Tunnel runtime communication transaction error:", error);
+                terminalLogs.innerHTML += `
+                    <div class="text-red-500 font-bold">> [SERVER DISCONNECTED] Gateway failed to handshake with Python host process.</div>
+                    <div class="text-red-400/80 text-[10px]">> Diagnostic detail context: ${error.message}</div>
+                `;
+                terminalLogs.scrollTop = terminalLogs.scrollHeight;
+            });
+        });
+    </script>
+</body>
+</html>

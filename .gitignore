@@ -2,4 +2,5 @@ __pycache__/
 *.pyc
 *.mat
 *.html
+!index.html
 .env
