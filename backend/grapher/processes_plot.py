@@ -77,7 +77,8 @@ def plot_thermodynamic_process(process_data: dict, fluids: list, fractions: list
         subplot_titles=(
             f"Real Gas Behavior: Z Factor vs {x_label_display}", 
             f"Energetic and State Profiles vs {x_label_display}"
-        )
+        ),
+        specs=[[{"secondary_y": False}, {"secondary_y": True}]]
     )
     
     # --- SUBPLOT 1: Microscopic Deviations (Compressibility Factor Z) ---
@@ -94,7 +95,7 @@ def plot_thermodynamic_process(process_data: dict, fluids: list, fractions: list
         mode='lines+markers', name='Molar Volume (V)',
         line=dict(color='royalblue', width=2),
         hovertemplate=f'<b>{x_label_display}</b>: %{{x}}<br><b>Volume</b>: %{{y:.6e}} m³/mol<extra></extra>'
-    ), row=1, col=2)
+    ), row=1, col=2, secondary_y=False)
     
     # Overlay the primary thermodynamic property line if present
     if y2_values is not None:
@@ -103,7 +104,7 @@ def plot_thermodynamic_process(process_data: dict, fluids: list, fractions: list
             mode='lines', name=y2_label,
             line=dict(color=y2_color, width=2, dash=y2_dash),
             hovertemplate=f'<b>{x_label_display}</b>: %{{x}}<br><b>{y2_label}</b>: %{{y:.2f}}<extra></extra>'
-        ), row=1, col=2)
+        ), row=1, col=2, secondary_y=True)
 
     # Overlay extra trajectories (e.g., Thermal drops in expansions)
     if extra_y2_values is not None:
@@ -146,7 +147,9 @@ def plot_thermodynamic_process(process_data: dict, fluids: list, fractions: list
     fig.update_xaxes(title_text=x_label_display, row=1, col=1)
     fig.update_xaxes(title_text=x_label_display, row=1, col=2)
     fig.update_yaxes(title_text="Z Factor (Dimensionless)", row=1, col=1)
-    fig.update_yaxes(title_text="Actual Thermodynamic Properties", row=1, col=2)
+    fig.update_yaxes(title_text="Molar Volume (m³/mol)", row=1, col=2, secondary_y=False)
+    fig.update_yaxes(title_text="Energetic Properties (J/mol)", row=1, col=2, secondary_y=True)
+    #fig.update_yaxes(title_text="Actual Thermodynamic Properties", row=1, col=2)
     
     # Launch interactive dashboard in default web browser
     #fig.show()
