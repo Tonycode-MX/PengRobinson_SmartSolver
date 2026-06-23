@@ -88,9 +88,9 @@ def simulate_isobaric_process(
     Simulates an isobaric (constant pressure) thermodynamic heating or cooling trajectory.
 
     This function calculates the evolution of the compressibility factor (Z), 
-    molar volume (V), and the relative change in residual enthalpy (\Delta H^R) 
-    across a defined temperature range. The simulation provides an array of states 
-    that can be directly plotted or analyzed by downstream tools.
+    molar volume (V), and the relative changes in residual enthalpy (\Delta H^R), 
+    residual entropy (\Delta S^R), and residual Gibbs free energy (\Delta G^R)
+    across a defined temperature range.
 
     Args:
         pressure (float): Constant absolute pressure of the system in Pascals (Pa).
@@ -110,8 +110,9 @@ def simulate_isobaric_process(
             - 'x_values' (List[float]): The discrete temperature points evaluated (K).
             - 'z_factors' (List[float]): Compressibility factors (Z) at each evaluated point.
             - 'volumes_m3_mol' (List[float]): Molar volumes at each point (m^3/mol).
-            - 'delta_H_J_mol' (List[float]): Change in residual enthalpy relative to 
-                                             the initial state (t_start) in J/mol.
+            - 'delta_H_J_mol' (List[float]): Change in residual enthalpy relative to initial state (J/mol).
+            - 'delta_S_J_mol_K' (List[float]): Change in residual entropy relative to initial state (J/(mol*K)).
+            - 'delta_G_J_mol' (List[float]): Change in residual Gibbs Free Energy relative to initial state (J/mol).
 
     Raises:
         ValueError: If `pressure`, `t_start`, or `t_end` are less than or equal to zero.
@@ -126,18 +127,22 @@ def simulate_isobaric_process(
     z_factors: List[float] = []
     volumes: List[float] = []
     delta_H: List[float] = []
+    delta_S: List[float] = []
+    delta_G: List[float] = []
     
     v_init = calculate_volume(pressure, t_start, fluids, fractions, kij_matrix)
-    h_init, _, _ = _calculate_residual_properties(pressure, t_start, v_init, fluids, fractions, kij_matrix)
+    h_init, s_init, g_init = _calculate_residual_properties(pressure, t_start, v_init, fluids, fractions, kij_matrix)
     
     for t in t_space:
         v = calculate_volume(pressure, t, fluids, fractions, kij_matrix)
         z = (pressure * v) / (UNIVERSAL_GAS_CONSTANT * t)
-        h_res, _, _ = _calculate_residual_properties(pressure, t, v, fluids, fractions, kij_matrix)
+        h_res, s_res, g_res = _calculate_residual_properties(pressure, t, v, fluids, fractions, kij_matrix)
         
         volumes.append(float(v))
         z_factors.append(float(z))
         delta_H.append(float(h_res - h_init))
+        delta_S.append(float(s_res - s_init))
+        delta_G.append(float(g_res - g_init))
         
     return {
         "process": "Isobaric",
@@ -145,8 +150,11 @@ def simulate_isobaric_process(
         "x_values": t_space.tolist(),
         "z_factors": z_factors,
         "volumes_m3_mol": volumes,
-        "delta_H_J_mol": delta_H
+        "delta_H_J_mol": delta_H,
+        "delta_S_J_mol_K": delta_S,
+        "delta_G_J_mol": delta_G
     }
+
 
 def simulate_isothermal_process(
     temperature: float,
@@ -161,10 +169,13 @@ def simulate_isothermal_process(
     Simulates an isothermal (constant temperature) thermodynamic trajectory.
 
     This function calculates the evolution of the compressibility factor (Z), 
-    molar volume (V), and the relative change in residual Gibbs Free Energy (\Delta G^R) 
-    across a defined pressure range. Tracking the shifts in Gibbs Free Energy is 
-    particularly valuable for evaluating phase stability and the spontaneity of 
-    processes (e.g., in nanopores or separation units).
+    molar volume (V), and the relative changes in residual enthalpy (\Delta H^R), 
+    residual entropy (\Delta S^R), and residual Gibbs free energy (\Delta G^R)
+    across a defined pressure range. 
+
+    Tracking the shifts in these properties, particularly Gibbs Free Energy, is 
+    valuable for evaluating phase stability and the spontaneity of processes 
+    (e.g., in nanopores or separation units).
 
     Args:
         temperature (float): Constant absolute temperature of the system in Kelvin (K).
@@ -184,8 +195,9 @@ def simulate_isothermal_process(
             - 'x_values' (List[float]): The discrete pressure points evaluated (Pa).
             - 'z_factors' (List[float]): Compressibility factors (Z) at each evaluated point.
             - 'volumes_m3_mol' (List[float]): Molar volumes at each point (m^3/mol).
-            - 'delta_G_J_mol' (List[float]): Change in residual Gibbs Free Energy relative to 
-                                             the initial state (p_start) in J/mol.
+            - 'delta_H_J_mol' (List[float]): Change in residual enthalpy relative to initial state (J/mol).
+            - 'delta_S_J_mol_K' (List[float]): Change in residual entropy relative to initial state (J/(mol*K)).
+            - 'delta_G_J_mol' (List[float]): Change in residual Gibbs Free Energy relative to initial state (J/mol).
 
     Raises:
         ValueError: If `temperature`, `p_start`, or `p_end` are less than or equal to zero.
@@ -200,18 +212,22 @@ def simulate_isothermal_process(
     
     z_factors: List[float] = []
     volumes: List[float] = []
+    delta_H: List[float] = []
+    delta_S: List[float] = []
     delta_G: List[float] = []
     
     v_init = calculate_volume(p_start, temperature, fluids, fractions, kij_matrix)
-    _, _, g_init = _calculate_residual_properties(p_start, temperature, v_init, fluids, fractions, kij_matrix)
+    h_init, s_init, g_init = _calculate_residual_properties(p_start, temperature, v_init, fluids, fractions, kij_matrix)
     
     for p in p_space:
         v = calculate_volume(p, temperature, fluids, fractions, kij_matrix)
         z = (p * v) / (UNIVERSAL_GAS_CONSTANT * temperature)
-        _, _, g_res = _calculate_residual_properties(p, temperature, v, fluids, fractions, kij_matrix)
+        h_res, s_res, g_res = _calculate_residual_properties(p, temperature, v, fluids, fractions, kij_matrix)
         
         volumes.append(float(v))
         z_factors.append(float(z))
+        delta_H.append(float(h_res - h_init))
+        delta_S.append(float(s_res - s_init))
         delta_G.append(float(g_res - g_init))
         
     return {
@@ -220,6 +236,8 @@ def simulate_isothermal_process(
         "x_values": p_space.tolist(),
         "z_factors": z_factors,
         "volumes_m3_mol": volumes,
+        "delta_H_J_mol": delta_H,
+        "delta_S_J_mol_K": delta_S,
         "delta_G_J_mol": delta_G
     }
 
@@ -236,9 +254,10 @@ def simulate_isochoric_process(
     Simulates an isochoric (constant molar volume) thermodynamic heating or cooling trajectory.
 
     This function evaluates the evolution of absolute pressure (P), compressibility 
-    factor (Z), and the relative change in internal energy (\Delta U) across a 
-    defined temperature range while keeping the molar volume strictly constant. 
-    The resulting arrays are formatted for downstream analysis or direct plotting.
+    factor (Z), and the relative changes in residual internal energy (\Delta U^R), 
+    residual enthalpy (\Delta H^R), residual entropy (\Delta S^R), residual Gibbs 
+    Free Energy (\Delta G^R), and residual Helmholtz Free Energy (\Delta A^R) across 
+    a defined temperature range.
 
     Args:
         v_m3_mol (float): Constant molar volume of the system in cubic meters per mole (m^3/mol).
@@ -258,9 +277,12 @@ def simulate_isochoric_process(
             - 'x_values' (List[float]): The discrete temperature points evaluated (K).
             - 'z_factors' (List[float]): Compressibility factors (Z) at each evaluated point.
             - 'volumes_m3_mol' (List[float]): Constant molar volumes repeated for each point (m^3/mol).
-            - 'delta_U_J_mol' (List[float]): Change in internal energy relative to 
-                                             the initial state (t_start) in Joules per mole (J/mol).
             - 'pressures_pa' (List[float]): Calculated absolute pressures at each point (Pa).
+            - 'delta_U_J_mol' (List[float]): Change in residual internal energy (J/mol).
+            - 'delta_H_J_mol' (List[float]): Change in residual enthalpy (J/mol).
+            - 'delta_S_J_mol_K' (List[float]): Change in residual entropy (J/(mol*K)).
+            - 'delta_G_J_mol' (List[float]): Change in residual Gibbs Free Energy (J/mol).
+            - 'delta_A_J_mol' (List[float]): Change in residual Helmholtz Free Energy (J/mol).
 
     Raises:
         ValueError: If `v_m3_mol`, `t_start`, or `t_end` are less than or equal to zero.
@@ -275,20 +297,39 @@ def simulate_isochoric_process(
     z_factors: List[float] = []
     pressures: List[float] = []
     delta_U: List[float] = []
+    delta_H: List[float] = []
+    delta_S: List[float] = []
+    delta_G: List[float] = []
+    delta_A: List[float] = []
     
+    # --- Initial State Calculations ---
     p_init = calculate_pressure(v_m3_mol, t_start, fluids, fractions, kij_matrix)
-    h_init, _, _ = _calculate_residual_properties(p_init, t_start, v_m3_mol, fluids, fractions, kij_matrix)
-    u_init = h_init - (p_init * v_m3_mol)
+    z_init = (p_init * v_m3_mol) / (UNIVERSAL_GAS_CONSTANT * t_start)
+    h_init, s_init, g_init = _calculate_residual_properties(p_init, t_start, v_m3_mol, fluids, fractions, kij_matrix)
     
+    # Rigorous residual internal energy: U^R = H^R - RT(Z-1)
+    u_init = h_init - UNIVERSAL_GAS_CONSTANT * t_start * (z_init - 1.0)
+    # Residual Helmholtz free energy: A^R = U^R - TS^R
+    a_init = u_init - t_start * s_init
+    
+    # --- Trajectory Calculations ---
     for t in t_space:
         p = calculate_pressure(v_m3_mol, t, fluids, fractions, kij_matrix)
         z = (p * v_m3_mol) / (UNIVERSAL_GAS_CONSTANT * t)
-        h_res, _, _ = _calculate_residual_properties(p, t, v_m3_mol, fluids, fractions, kij_matrix)
-        u_res = h_res - (p * v_m3_mol)
+        h_res, s_res, g_res = _calculate_residual_properties(p, t, v_m3_mol, fluids, fractions, kij_matrix)
+        
+        u_res = h_res - UNIVERSAL_GAS_CONSTANT * t * (z - 1.0)
+        a_res = u_res - t * s_res
         
         pressures.append(float(p))
         z_factors.append(float(z))
+        
+        # Calculate relative changes (Delta)
+        delta_H.append(float(h_res - h_init))
+        delta_S.append(float(s_res - s_init))
+        delta_G.append(float(g_res - g_init))
         delta_U.append(float(u_res - u_init))
+        delta_A.append(float(a_res - a_init))
         
     return {
         "process": "Isochoric",
@@ -296,10 +337,13 @@ def simulate_isochoric_process(
         "x_values": t_space.tolist(),
         "z_factors": z_factors,
         "volumes_m3_mol": [v_m3_mol] * points,
+        "pressures_pa": pressures,
         "delta_U_J_mol": delta_U,
-        "pressures_pa": pressures
+        "delta_H_J_mol": delta_H,
+        "delta_S_J_mol_K": delta_S,
+        "delta_G_J_mol": delta_G,
+        "delta_A_J_mol": delta_A
     }
-
 
 def simulate_adiabatic_process(
     p_start: float,
@@ -319,8 +363,9 @@ def simulate_adiabatic_process(
     for the exact temperature at each pressure step that maintains the initial 
     residual entropy.
 
-    It also calculates the steady-flow adiabatic work produced or consumed 
-    (W = \Delta H) based on the residual enthalpy shifts.
+    It comprehensively tracks the evolution of the compressibility factor (Z), 
+    molar volume (V), steady-flow work, and all relative changes in residual 
+    properties (\Delta H^R, \Delta S^R, \Delta G^R, \Delta U^R, \Delta A^R).
 
     Args:
         p_start (float): Initial absolute pressure of the system in Pascals (Pa).
@@ -341,8 +386,12 @@ def simulate_adiabatic_process(
             - 'z_factors' (List[float]): Compressibility factors (Z) at each evaluated point.
             - 'volumes_m3_mol' (List[float]): Molar volumes at each point (m^3/mol).
             - 'temperatures_K' (List[float]): Calculated isentropic temperatures (K).
-            - 'work_produced_J_mol' (List[float]): Cumulative steady-flow work produced 
-                                                   or consumed (J/mol), calculated as (H_init - H_real).
+            - 'work_produced_J_mol' (List[float]): Cumulative steady-flow work (J/mol).
+            - 'delta_H_J_mol' (List[float]): Change in residual enthalpy (J/mol).
+            - 'delta_S_J_mol_K' (List[float]): Change in residual entropy (should be ~0) (J/(mol*K)).
+            - 'delta_G_J_mol' (List[float]): Change in residual Gibbs Free Energy (J/mol).
+            - 'delta_U_J_mol' (List[float]): Change in residual internal energy (J/mol).
+            - 'delta_A_J_mol' (List[float]): Change in residual Helmholtz Free Energy (J/mol).
 
     Raises:
         ValueError: If `p_start`, `p_end`, or `t_start` are less than or equal to zero.
@@ -354,16 +403,28 @@ def simulate_adiabatic_process(
         
     p_space = np.linspace(p_start, p_end, points)
     
+    # --- Initial State Calculations ---
     v_init = calculate_volume(p_start, t_start, fluids, fractions, kij_matrix)
-    h_init, s_target, _ = _calculate_residual_properties(p_start, t_start, v_init, fluids, fractions, kij_matrix)
+    z_init = (p_start * v_init) / (UNIVERSAL_GAS_CONSTANT * t_start)
+    h_init, s_target, g_init = _calculate_residual_properties(p_start, t_start, v_init, fluids, fractions, kij_matrix)
+    
+    u_init = h_init - UNIVERSAL_GAS_CONSTANT * t_start * (z_init - 1.0)
+    a_init = u_init - t_start * s_target
     
     z_factors: List[float] = []
     volumes: List[float] = []
     temperatures: List[float] = []
     work_produced: List[float] = []
     
+    delta_H: List[float] = []
+    delta_S: List[float] = []
+    delta_G: List[float] = []
+    delta_U: List[float] = []
+    delta_A: List[float] = []
+    
     t_guess = t_start
     
+    # --- Trajectory Calculations ---
     for p in p_space:
         def entropy_objective(t_est: float) -> float:
             if t_est <= 0:
@@ -390,12 +451,21 @@ def simulate_adiabatic_process(
         t_real = float(sol.root)
         v_real = calculate_volume(p, t_real, fluids, fractions, kij_matrix)
         z_real = (p * v_real) / (UNIVERSAL_GAS_CONSTANT * t_real)
-        h_real, _, _ = _calculate_residual_properties(p, t_real, v_real, fluids, fractions, kij_matrix)
+        h_real, s_real, g_real = _calculate_residual_properties(p, t_real, v_real, fluids, fractions, kij_matrix)
+        
+        u_real = h_real - UNIVERSAL_GAS_CONSTANT * t_real * (z_real - 1.0)
+        a_real = u_real - t_real * s_real
         
         temperatures.append(t_real)
         volumes.append(v_real)
         z_factors.append(z_real)
         work_produced.append(float(h_init - h_real))
+        
+        delta_H.append(float(h_real - h_init))
+        delta_S.append(float(s_real - s_target))
+        delta_G.append(float(g_real - g_init))
+        delta_U.append(float(u_real - u_init))
+        delta_A.append(float(a_real - a_init))
         
         t_guess = t_real
         
@@ -406,5 +476,10 @@ def simulate_adiabatic_process(
         "z_factors": z_factors,
         "volumes_m3_mol": volumes,
         "temperatures_K": temperatures,
-        "work_produced_J_mol": work_produced
+        "work_produced_J_mol": work_produced,
+        "delta_H_J_mol": delta_H,
+        "delta_S_J_mol_K": delta_S,
+        "delta_G_J_mol": delta_G,
+        "delta_U_J_mol": delta_U,
+        "delta_A_J_mol": delta_A
     }
