@@ -12,7 +12,6 @@ orchestrator_prompt = ChatPromptTemplate.from_messages([
     Your objective is to read the user's problem, extract key information, and delegate the task to the correct Specialist.
     
     EXTRACTION RULES:
-    EXTRACTION RULES:
     1. Identify the chemical fluids and translate them to strict CoolProp standard string identifiers (e.g., "agua" -> "Water", "metano" -> "Methane", "Dióxido de Carbono" -> "CarbonDioxide"). NEVER use spaces in fluid names.
     2. Identify molar fractions (ensure they sum to 1.0).
     3. Extract ALL exact state variables and their original units provided by the user (Temperature, Pressure, AND Volume/Molar Volume).
@@ -34,4 +33,4 @@ orchestrator_prompt = ChatPromptTemplate.from_messages([
 orchestrator_tools = [thermo_specialist_tool]
 
 orchestrator_agent = create_tool_calling_agent(llm, orchestrator_tools, orchestrator_prompt)
-orchestrator_executor = AgentExecutor(agent=orchestrator_agent, tools=orchestrator_tools, verbose=True)
+orchestrator_executor = AgentExecutor(agent=orchestrator_agent, tools=orchestrator_tools, verbose=False)

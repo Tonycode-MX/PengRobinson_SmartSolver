@@ -154,7 +154,10 @@ def plot_thermodynamic_process(process_data: dict, fluids: list, fractions: list
     # Launch interactive dashboard in default web browser
     #fig.show()
     #fig.write_html("dashboard_termodinamico.html", auto_open=True, include_plotlyjs="cdn")
-    fig.write_json("latest_plot.json")
+    #fig.write_json("latest_plot.json")
+
+    with open("latest_plot.json", "w", encoding="utf-8") as f:
+        fig.write_json(f)
 
 # --- Standalone Testing Block ---
 if __name__ == "__main__":
