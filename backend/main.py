@@ -49,7 +49,7 @@ async def solve_thermo_endpoint(request: QueryRequest):
         # Recogemos el JSON de Plotly
         plotly_dict = {}
         if os.path.exists("latest_plot.json"):
-            with open("latest_plot.json", "r") as f:
+            with open("latest_plot.json", "r", encoding="utf-8") as f:
                 plotly_dict = json.load(f)
             os.remove("latest_plot.json")
             

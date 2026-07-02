@@ -230,7 +230,7 @@ thermo_prompt = ChatPromptTemplate.from_messages([
 ])
 
 thermo_agent = create_tool_calling_agent(llm, thermo_tools, thermo_prompt)
-thermo_executor = AgentExecutor(agent=thermo_agent, tools=thermo_tools, verbose=True)
+thermo_executor = AgentExecutor(agent=thermo_agent, tools=thermo_tools, verbose=False)
 
 @tool(return_direct=True)
 def thermo_specialist_tool(query: str) -> str:

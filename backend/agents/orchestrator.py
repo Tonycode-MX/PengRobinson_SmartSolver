@@ -33,4 +33,4 @@ orchestrator_prompt = ChatPromptTemplate.from_messages([
 orchestrator_tools = [thermo_specialist_tool]
 
 orchestrator_agent = create_tool_calling_agent(llm, orchestrator_tools, orchestrator_prompt)
-orchestrator_executor = AgentExecutor(agent=orchestrator_agent, tools=orchestrator_tools, verbose=True)
+orchestrator_executor = AgentExecutor(agent=orchestrator_agent, tools=orchestrator_tools, verbose=False)
