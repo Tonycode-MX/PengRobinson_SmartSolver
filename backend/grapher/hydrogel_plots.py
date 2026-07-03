@@ -17,108 +17,50 @@ class HydrogelGrapher3D:
         self.colorscale_simulated = "Viridis"       # Professional gradient for simulation clouds
         self.color_experimental_mesh = "#ff7f0e"    # Safety orange for physical baseline anchors
 
-    def generate_surface_distribution_3d_json(
-        self, 
-        simulated_diameters: List[float], 
-        voltages_kv: List[float],
-        experimental_diameters: List[float]
-    ) -> str:
-        """
-        Processes stochastic multi-variable tracking arrays and superimposes a 3D surface
-        mapping how fiber diameter distributions respond to custom physical voltage gradients.
-        """
-        # Convert raw stream lists safely into rigid multi-dimensional NumPy arrays
-        sim_d = np.array(simulated_diameters, dtype=float)
-        v_kv = np.array(voltages_kv, dtype=float)
-        exp_d = np.array(experimental_diameters, dtype=float)
+def generate_drug_release_surface_3d_json(
+    self, 
+    times_hours: List[float], 
+    temperatures_celsius: List[float],
+    fraction_released: List[float]
+) -> str:
+    """
+    Computes and serializes a 3D response surface mapping cumulative drug release 
+    kinetics as a simultaneous function of elapsed time and body temperature gradients.
+    """
+    # Convert input lists into dense NumPy matrices for spatial meshgrid representation
+    t_arr = np.array(times_hours, dtype=float)
+    temp_arr = np.array(temperatures_celsius, dtype=float)
+    z_release = np.array(fraction_released, dtype=float)
 
-        # Compute a 2D histogram to derive a joint probability density grid matrix
-        # This bins the interaction data into an explicit X-Y physical coordinate plane
-        density_matrix, x_edges, y_edges = np.histogram2d(
-            v_kv, sim_d, bins=[25, 25], density=True
-        )
+    # Reconstruct the grid matching rows and columns for Plotly Surface
+    # Assuming data was computed on a structured grid of len(temps) x len(times)
+    n_temps = len(np.unique(temp_arr))
+    n_times = len(np.unique(t_arr))
+    
+    x_mesh = t_arr.reshape(n_temps, n_times)
+    y_mesh = temp_arr.reshape(n_temps, n_times)
+    z_mesh = z_release.reshape(n_temps, n_times)
 
-        # Calculate coordinate midpoints from edge arrays to construct structural meshgrids
-        x_centers = (x_edges[:-1] + x_edges[1:]) / 2.0
-        y_centers = (y_edges[:-1] + y_edges[1:]) / 2.0
-        x_mesh, y_mesh = np.meshgrid(x_centers, y_centers)
+    fig = go.Figure()
+    fig.add_trace(go.Surface(
+        x=x_mesh,
+        y=y_mesh,
+        z=z_mesh,
+        name="Pore Shrinkage Release Profile",
+        colorscale="Cividis",
+        colorbar=dict(title=dict(text="Fraction Released (M_t / M_inf)", side="top"), thickness=15)
+    ))
 
-        # Instantiate the main Plotly 3D Figure container
-        fig = go.Figure()
-
-        # Trace A: Render the Monte Carlo stochastic response cloud as a continuous 3D Surface
-        fig.add_trace(go.Surface(
-            x=x_mesh,
-            y=y_mesh,
-            z=density_matrix.T,  # Transpose matrix to properly align with row-major mesh axes
-            name="Stochastic Simulation Mesh",
-            colorscale=self.colorscale_simulated,
-            colorbar=dict(
-                title=dict(
-                    text="Probability Density",
-                    side="top"  # Correct modern property configuration mapping mapping
-                ),
-                thickness=15,
-                len=0.6
-            ),
-            opacity=0.85
-        ))
-
-        # Trace B: Overlay discrete experimental control samples as a distinct 3D Scatter layer
-        # Maps the actual microscope data at the current active baseline point for calibration
-        fixed_baseline_voltage = np.mean(v_kv)
-        fig.add_trace(go.Scatter3d(
-            x=[fixed_baseline_voltage] * len(exp_d),
-            y=exp_d,
-            z=np.ones(len(exp_d)) * (np.max(density_matrix) * 0.1), # Offset points to hover visually
-            mode='markers',
-            name="Microscope Controls",
-            marker=dict(
-                size=5,
-                color=self.color_experimental_mesh,
-                opacity=0.9,
-                symbol='diamond'
-            )
-        ))
-
-        # Enforce strict spatial documentation axis formatting and layout aesthetics
-        fig.update_layout(
-            title={
-                'text': "Level 5 Validation Matrix - 3D Surface Response Mapping",
-                'y': 0.93,
-                'x': 0.5,
-                'xanchor': 'center',
-                'yanchor': 'top'
-            },
-            scene=dict(
-                xaxis_title="Electrospinning Voltage (kV)",
-                yaxis_title="Fiber Diameter (nm)",
-                zaxis_title="Probability Density",
-                camera=dict(
-                    eye=dict(x=1.5, y=1.5, z=1.2)  # Sets an optimal standard isometric viewing angle
-                ),
-                aspectmode='manual',
-                aspectratio=dict(x=1.0, y=1.0, z=0.7) # Mutes Z axis compression for clarity
-            ),
-            template="plotly_white",
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=0.02,
-                xanchor="center",
-                x=0.5
-            ),
-            font=dict(
-                family="Helvetica, Arial, sans-serif",
-                size=11
-            ),
-            margin=dict(l=0, r=0, b=0, t=40) # Eliminates padding for dense embedded frontend layout blocks
-        )
-
-        # Programmatically dump internal states into a secure JSON packet for network routing
-        serialized_json_graph_3d = json.dumps(fig, cls=utils.PlotlyJSONEncoder)
-        return serialized_json_graph_3d
-
+    fig.update_layout(
+        title={'text': "Dynamic Drug Delivery Phase Matrix - 3D Kinetics", 'y': 0.93, 'x': 0.5, 'xanchor': 'center'},
+        scene=dict(
+            xaxis_title="Elapsed Time (Hours)",
+            yaxis_title="Body Temperature (°C)",
+            zaxis_title="Cumulative Release Fraction"
+        ),
+        template="plotly_white"
+    )
+    return json.dumps(fig, cls=utils.PlotlyJSONEncoder)
 
 # =====================================================================
 # MODULE STANDALONE INTEGRATION TEST MATRIX (3D ENGINE BENCHMARK)

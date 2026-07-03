@@ -14,7 +14,6 @@ if BACKEND_ROOT not in sys.path:
 
 from agents.llm_setup import llm
 from utils.conversions import conversion_tools_list
-# Import the newly developed 3D analytical engine
 from grapher.hydrogel_plots import HydrogelGrapher3D
 
 # Initialize a persistent singleton instance of the local 3D Plotly serialization engine
@@ -38,6 +37,10 @@ SAFETY_BOUNDS: Dict[str, tuple] = {
     "current_ua": (0.01, 10.0)
 }
 
+# Empirical kinetic parameters for hydrogel pore thermo-response (PNIPAM-based LCST baseline)
+LCST_TEMPERATURE = 32.0         # Lower Critical Solution Temperature in Celsius
+MAX_PORE_SHRINKAGE_RATE = 0.85   # Maximum volumetric contraction ratio at hyperthermia
+
 # =====================================================================
 # AI TOOLS FOR HYDROGEL SPECIALIST AGENT
 # =====================================================================
@@ -45,18 +48,18 @@ SAFETY_BOUNDS: Dict[str, tuple] = {
 @tool
 def tool_read_current_laboratory_state() -> str:
     """
-    Queries and reads the persistent operational telemetry telemetry registry in the system memory.
-    Use this tool prior to calculating any mathematical deltas or verifying active baselines.
+    Queries and reads the persistent operational telemetry registry in the system memory.
+    Use this tool prior to calculating any mathematical deltas or verifying active manufacturing baselines.
     
     Returns:
-        str: A clean data string formatting the active parameters of the laboratory cell.
+        str: A clean data string formatting the active parameters of the laboratory manufacturing cell.
     """
     return (
-        "System Observation: Current baseline active configuration readouts:\n"
+        "System Observation: Current baseline active manufacturing configuration readouts:\n"
         f"• Voltage: {LAB_NOMINAL_MEMORY['voltage_kv']:.2f} kV\n"
         f"• Polymer Viscosity: {LAB_NOMINAL_MEMORY['viscosity_pa_s']:.2f} Pa·s\n"
         f"• Syringe Flow Rate: {LAB_NOMINAL_MEMORY['flow_rate_ml_h']:.2f} mL/h\n"
-        f"• Ambient Temperature: {LAB_NOMINAL_MEMORY['temperature_celsius']:.2f} °C\n"
+        f"• Ambient Chamber Temperature: {LAB_NOMINAL_MEMORY['temperature_celsius']:.2f} °C\n"
         f"• Jet Current: {LAB_NOMINAL_MEMORY['current_ua']:.2f} uA"
     )
 
@@ -68,9 +71,9 @@ def tool_modify_and_simulate_hydrogel(
     experimental_batch_nm: Optional[List[float]] = None
 ) -> str:
     """
-    Transforms continuous process values, enforces physical safety constraints, 
+    Fase 1: Transforms continuous fabrication values, enforces physical safety constraints, 
     and executes a high-fidelity stochastic Monte Carlo distribution loop (10,000 samples)
-    generating a 3D response surface of joint probability density profiles.
+    generating a 3D response surface mapping manufacturing parameter variance.
     
     Args:
         parameter_key (str): Target parameter. Must be one of: 'voltage_kv', 'viscosity_pa_s', 'flow_rate_ml_h', 'temperature_celsius', 'current_ua'.
@@ -101,7 +104,7 @@ def tool_modify_and_simulate_hydrogel(
     else:
         return f"System Error: Unrecognized arithmetic manipulation rule set profile: '{modification_type}'."
 
-    # Enforce rigid physical security clamp triggers
+    # Enforce rigid physical security clamp triggers (Clamping safeguards)
     min_bound, max_bound = SAFETY_BOUNDS[parameter_key]
     safety_triggered = False
     safety_message = ""
@@ -124,9 +127,9 @@ def tool_modify_and_simulate_hydrogel(
     samples = 10000
     rng = np.random.default_rng()
 
-    # Model physical environmental sensor noise distributions
+    # Model physical environmental sensor noise distributions (Gaussian models)
     voltages = rng.normal(LAB_NOMINAL_MEMORY["voltage_kv"], 0.4, samples)
-    voltages = np.maximum(voltages, 1.0)  # Absolute dielectric floor protection
+    voltages = np.maximum(voltages, 1.0)  # Asymptotic geometric floor protection to avoid division by zero
     viscosities = rng.normal(LAB_NOMINAL_MEMORY["viscosity_pa_s"], 0.05, samples)
     flows = rng.normal(LAB_NOMINAL_MEMORY["flow_rate_ml_h"], 0.01, samples)
 
@@ -139,7 +142,6 @@ def tool_modify_and_simulate_hydrogel(
     active_lab_array = experimental_batch_nm if experimental_batch_nm else fallback_laboratory_data
 
     # Compile the resulting matrix arrays into a single raw Plotly 3D JSON document
-    # Passes voltages array explicitly to construct the joint multi-variable X-Y grid plane
     serialized_chart_json = graph_engine.generate_surface_distribution_3d_json(
         simulated_diameters=simulated_diameters,
         voltages_kv=voltages.tolist(),
@@ -151,7 +153,7 @@ def tool_modify_and_simulate_hydrogel(
 
     # Build the non-bleeding observation statement string for agent extraction
     output_string = (
-        "System Observation: Hydrogel processing simulation loop completed successfully.\n"
+        "System Observation: Hydrogel manufacturing processing simulation loop completed successfully.\n"
         f"• Modified Parameter Reference: '{parameter_key}'\n"
         f"• Arithmetic Vector Profile: '{modification_type}' (Value Shift: {value})\n"
         f"• Settled Registry Configuration: {LAB_NOMINAL_MEMORY[parameter_key]} (Previous state: {current_nominal})\n"
@@ -161,17 +163,75 @@ def tool_modify_and_simulate_hydrogel(
         output_string += f"• Intercept Context Warning: {safety_message}\n"
 
     output_string += (
-        "\n--- STOCHASTIC DISTRIBUTIONS ANALYTICS ---\n"
+        "\n--- STOCHASTIC MANUFACTURE DISTRIBUTIONS ANALYTICS ---\n"
         f"• Predicted Mean Fiber Size: {np.mean(simulated_diameters):.2f} nm\n"
         f"• Predicted Geometric Standard Deviation: {np.std(simulated_diameters):.2f} nm\n"
-        "• Plotly Multi-Layer 3D Surface Status: JSON payload compiled successfully."
+        "• Plotly Multi-Layer 3D Surface Status: Fabrication payload package compiled successfully."
     )
     return output_string
 
-# Combine structural conversion utility lists with the newly instantiated hydrogel tools
+@tool
+def tool_simulate_thermal_pore_shrinkage_release(
+    target_body_temperature: float,
+    total_simulation_hours: float
+) -> str:
+    """
+    Fase 2: Simulates the physiological hydrogel pore shrinkage kinetics and calculates 
+    the cumulative drug delivery release curves based on human body temperature and diffusion.
+    
+    Args:
+        target_body_temperature (float): The host physiological temperature in Celsius (e.g., 37.0).
+        total_simulation_hours (float): The continuous evaluation time window in hours.
+    """
+    # Enforce physiological safety clamping on human body inputs
+    target_body_temperature = max(10.0, min(target_body_temperature, 60.0))
+    total_simulation_hours = max(0.1, min(total_simulation_hours, 168.0)) # Max 1 week window
+
+    # Define grid spacing arrays for high-fidelity 3D mesh surface representation
+    temps = np.linspace(25.0, 42.0, 30)  # Thermal sweep across hypothermia to hyperthermia bounds
+    times = np.linspace(0.0, total_simulation_hours, 40)
+    
+    times_grid, temps_grid = np.meshgrid(times, temps)
+    
+    # Mathematical thermodynamic model mapping volumetric pore shrinking via thermal activation (Sigmoidal LCST Transition)
+    shrinkage_factor = 1.0 - (MAX_PORE_SHRINKAGE_RATE / (1.0 + np.exp(-(temps_grid - LCST_TEMPERATURE) / 1.5)))
+    
+    # Mass transfer diffusion equations (Modified structural Korsmeyer-Peppas matrix model)
+    kinetic_exponent = 0.5 * (2.0 - shrinkage_factor)  # Structural anomalous macromolecular transport vector
+    k_constant = 0.15 * (1.0 / shrinkage_factor)
+    
+    fraction_released = k_constant * np.power(times_grid, kinetic_exponent)
+    fraction_released = np.clip(fraction_released, 0.0, 1.0)  # Bound tightly by law of conservation of mass
+
+    # Dispatch data layers directly to the modern 3D Plotly serialization engine interface
+    serialized_json_3d = graph_engine.generate_drug_release_surface_3d_json(
+        times_hours=times_grid.flatten().tolist(),
+        temperatures_celsius=temps_grid.flatten().tolist(),
+        fraction_released=fraction_released.flatten().tolist()
+    )
+    
+    # Store the 3D grid context payload inside environmental network variables
+    os.environ["LATEST_PLOT_JSON"] = serialized_json_3d
+    
+    # Calculate specific point metrics for the user's explicit target request parameters
+    specific_shrinkage = 1.0 - (MAX_PORE_SHRINKAGE_RATE / (1.0 + np.exp(-(target_body_temperature - LCST_TEMPERATURE) / 1.5)))
+    specific_exponent = 0.5 * (2.0 - specific_shrinkage)
+    final_release = np.clip(0.15 * (1.0 / specific_shrinkage) * np.power(total_simulation_hours, specific_exponent), 0.0, 1.0)
+
+    return (
+        "System Observation: Physiological thermal pore contraction and drug mass transfer diffusion executed.\n"
+        f"• Evaluated Target Body Temperature: {target_body_temperature:.1f} °C\n"
+        f"• Volumetric Matrix Pore Contraction: {(1.0 - specific_shrinkage) * 100:.2f}% reduction in pore volume\n"
+        f"• Mass Transport Release Mechanism: Anomalous non-Fickian diffusion (n = {specific_exponent:.3f})\n"
+        f"• Predicted Cumulative Drug Released at {total_simulation_hours} Hours: {final_release * 100:.2f}% of total encapsulated dosage.\n"
+        "• Plotly 3D Surface Matrix Status: Delivery kinetics response surface compiled successfully."
+    )
+
+# Combine structural conversion utility lists with the unified dual-phase hydrogel tools
 hydrogel_tools = conversion_tools_list + [
     tool_read_current_laboratory_state,
-    tool_modify_and_simulate_hydrogel
+    tool_modify_and_simulate_hydrogel,
+    tool_simulate_thermal_pore_shrinkage_release
 ]
 
 # =====================================================================
@@ -189,9 +249,10 @@ hydrogel_prompt = ChatPromptTemplate.from_messages([
        - 'viscosidad', 'viscosity' -> 'viscosity_pa_s'
        - 'temperatura', 'temperature', 'celsius' -> 'temperature_celsius'
        - 'corriente', 'current', 'ua' -> 'current_ua'
-    3. Determine the correct calculation profile (e.g., 'unit_increase', 'percentage_decrease', 'absolute_set') and call 'tool_modify_and_simulate_hydrogel'.
-    4. Provide the exact text summary results back to the user clearly using Markdown notation (bullet items and bold highlights).
-    5. Conclude by writing a brief 1-2 sentence high-level scientific deduction explaining how this parameter shift physically controls taylor cone equilibrium or macromolecular polymer network aggregation. Do not alter data results."""),
+    3. If the request relates to the manufacturing phase (voltages, flow rates, viscosities), determine the calculation profile and call 'tool_modify_and_simulate_hydrogel'.
+    4. If the request relates to clinical application (body temperature, drug delivery, pore shrinkage, time kinetics), extract variables and call 'tool_simulate_thermal_pore_shrinkage_release'.
+    5. Provide the exact text summary results back to the user clearly using Markdown notation (bullet items and bold highlights).
+    6. Conclude by writing a brief 1-2 sentence high-level scientific deduction explaining how this parameter shift physically controls taylor cone equilibrium or macromolecular polymer network aggregation, or how temperature triggers hydrogel LCST phase transition deswelling and anomalous drug mass transport."""),
     ("placeholder", "{chat_history}"),
     ("human", "{input}"),
     ("placeholder", "{agent_scratchpad}"),
@@ -204,7 +265,7 @@ hydrogel_executor = AgentExecutor(agent=hydrogel_agent, tools=hydrogel_tools, ve
 def hydrogel_specialist_tool(query: str) -> str:
     """
     Use this tool ONLY when the user's task or query involves hydrogel synthesis, electrospinning parameters, 
-    macromolecular polymer fiber diameters, syringe pump flow rates, laboratory safe operating ranges, 
-    or stochastic Monte Carlo fiber size distributions.
+    macromolecular polymer fiber diameters, syringe pump flow rates, physiological drug delivery kinetics, 
+    pore shrinkage mechanisms, time-release profiles, or stochastic Monte Carlo size distributions.
     """
     return hydrogel_executor.invoke({"input": query})["output"]
