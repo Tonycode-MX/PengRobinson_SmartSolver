@@ -10,6 +10,17 @@ from .eos import (
     calculate_compressibility_factor
 )
 
+from utils.conversions import (
+    convert_temperature_to_si,
+    convert_pressure_to_si,
+    convert_volume_to_si,
+    convert_molar_volume_to_si,
+    convert_energy_to_si,
+    convert_molar_energy_to_si,
+    convert_molar_entropy_to_si,
+    convert_amount_to_moles
+    )
+
 """
 PR-SmartSolver Path Functions & Process Simulators.
 Computes thermodynamic trajectories (Isobaric, Isothermal, Isochoric, Adiabatic-Isentropic)
@@ -17,9 +28,12 @@ for real fluids and multicomponent mixtures using the Peng-Robinson Cubic EOS.
 All internal metadata and dictionary keys are strictly in English to match repository standards.
 """
 def _calculate_residual_properties(
-    pressure: float,
-    temperature: float,
-    volume: float,
+    press_val: float,
+    press_unit: str,
+    temp_val: float,
+    temp_unit: str,
+    vol_val: float,
+    vol_unit: str,
     fluids: List[str],
     fractions: List[float],
     kij_matrix: np.ndarray
@@ -33,9 +47,12 @@ def _calculate_residual_properties(
     from an ideal gas behavior at the same temperature and pressure.
 
     Args:
-        pressure (float): Absolute pressure of the system in Pascals (Pa).
-        temperature (float): Absolute temperature of the system in Kelvin (K).
-        volume (float): Molar volume of the system in cubic meters per mole (m^3/mol).
+        press_val (float): The numerical value of the absolute pressure.
+        press_unit (str): The unit of the pressure as written in the prompt (e.g., 'Pa', 'atm', 'psi', 'bar', 'MPa').
+        temp_val (float): The numerical value of the absolute temperature.
+        temp_unit (str): The unit of the temperature as written in the prompt (e.g., 'C', 'F', 'K', 'R').
+        vol_val (float): The numerical value of the molar volume.
+        vol_unit (str): The unit of the molar volume as written in the prompt (e.g., 'm^3/mol', 'L/mol', 'cm^3/mol').
         fluids (List[str]): List of fluid names recognized by CoolProp.
         fractions (List[float]): Molar fractions of each component in the mixture.
         kij_matrix (np.ndarray): A 2D symmetric NumPy array of shape (n, n) representing 
@@ -48,14 +65,22 @@ def _calculate_residual_properties(
             - g_res (float): Residual Gibbs Free Energy (G^R) in Joules per mole (J/mol).
 
     Raises:
-        ValueError: If pressure, temperature, or molar volume are less than or equal to zero.
+        ValueError: If pressure, temperature, or molar volume are less than or equal to zero after conversion to SI.
         ValueError: If the molar volume is less than or equal to the mixture co-volume (b_m), 
                     which violates physical boundaries and results in a math domain error 
                     (negative logarithm arguments in the S^R and H^R calculations).
         ValueError: If there is a dimension mismatch between fluids, fractions, and kij_matrix,
                     or if fractions are invalid (propagated from `calculate_pr_parameters`).
     """
-    a_m, b_m, da_dT_m = calculate_pr_parameters(temperature, fluids, fractions, kij_matrix)
+    # Convert inputs to SI units (Pa for pressure, K for temperature, m^3/mol for molar volume)
+    pressure = convert_pressure_to_si(press_val, press_unit)
+    temperature = convert_temperature_to_si(temp_val, temp_unit)
+    volume = convert_molar_volume_to_si(vol_val, vol_unit)
+    
+    if pressure <= 0 or temperature <= 0 or volume <= 0:
+        raise ValueError("Pressure, temperature, and molar volume must be strictly positive after conversion to SI.")
+
+    a_m, b_m, da_dT_m = calculate_pr_parameters(temperature, 'K', fluids, fractions, kij_matrix)
     Z = (pressure * volume) / (UNIVERSAL_GAS_CONSTANT * temperature)
     
     sqrt2 = np.sqrt(2.0)
@@ -76,9 +101,12 @@ def _calculate_residual_properties(
 
 
 def simulate_isobaric_process(
-    pressure: float,
-    t_start: float,
-    t_end: float,
+    press_val: float,
+    press_unit: str,
+    t_start_val: float,
+    t_start_unit: str,
+    t_end_val: float,
+    t_end_unit: str,
     fluids: List[str],
     fractions: List[float],
     kij_matrix: np.ndarray,
@@ -93,9 +121,12 @@ def simulate_isobaric_process(
     across a defined temperature range.
 
     Args:
-        pressure (float): Constant absolute pressure of the system in Pascals (Pa).
-        t_start (float): Initial absolute temperature in Kelvin (K).
-        t_end (float): Final absolute temperature in Kelvin (K).
+        press_val (float): The numerical value of the constant absolute pressure.
+        press_unit (str): The unit of the pressure as written in the prompt (e.g., 'Pa', 'atm', 'psi', 'bar', 'MPa').
+        t_start_val (float): The numerical value of the initial absolute temperature.
+        t_start_unit (str): The unit of the initial temperature (e.g., 'C', 'F', 'K', 'R').
+        t_end_val (float): The numerical value of the final absolute temperature.
+        t_end_unit (str): The unit of the final temperature (e.g., 'C', 'F', 'K', 'R').
         fluids (List[str]): List of fluid names recognized by CoolProp.
         fractions (List[float]): Molar fractions of each component in the mixture.
         kij_matrix (np.ndarray): A 2D symmetric NumPy array of shape (n, n) representing 
@@ -115,10 +146,15 @@ def simulate_isobaric_process(
             - 'delta_G_J_mol' (List[float]): Change in residual Gibbs Free Energy relative to initial state (J/mol).
 
     Raises:
-        ValueError: If `pressure`, `t_start`, or `t_end` are less than or equal to zero.
+        ValueError: If `pressure`, `t_start`, or `t_end` are less than or equal to zero after conversion to SI.
         ValueError: Propagates EOS errors if physical boundaries are violated during 
                     the simulation (e.g., if volume attempts to drop below co-volume b_m).
     """
+    # Convert inputs to SI units (Pa for pressure, K for temperature)
+    pressure = convert_pressure_to_si(press_val, press_unit)
+    t_start = convert_temperature_to_si(t_start_val, t_start_unit)
+    t_end = convert_temperature_to_si(t_end_val, t_end_unit)
+
     if pressure <= 0 or t_start <= 0 or t_end <= 0:
         raise ValueError("Pressure and Temperatures must be strictly positive.")
         
@@ -130,13 +166,13 @@ def simulate_isobaric_process(
     delta_S: List[float] = []
     delta_G: List[float] = []
     
-    v_init = calculate_volume(pressure, t_start, fluids, fractions, kij_matrix)
-    h_init, s_init, g_init = _calculate_residual_properties(pressure, t_start, v_init, fluids, fractions, kij_matrix)
+    v_init = calculate_volume(pressure, 'Pa', t_start, 'K', fluids, fractions, kij_matrix)
+    h_init, s_init, g_init = _calculate_residual_properties(pressure, 'Pa', t_start, 'K', v_init, 'm^3/mol', fluids, fractions, kij_matrix)
     
     for t in t_space:
-        v = calculate_volume(pressure, t, fluids, fractions, kij_matrix)
+        v = calculate_volume(pressure, 'Pa', t, 'K', fluids, fractions, kij_matrix)
         z = (pressure * v) / (UNIVERSAL_GAS_CONSTANT * t)
-        h_res, s_res, g_res = _calculate_residual_properties(pressure, t, v, fluids, fractions, kij_matrix)
+        h_res, s_res, g_res = _calculate_residual_properties(pressure, 'Pa', t, 'K', v, 'm^3/mol', fluids, fractions, kij_matrix)
         
         volumes.append(float(v))
         z_factors.append(float(z))
@@ -157,9 +193,12 @@ def simulate_isobaric_process(
 
 
 def simulate_isothermal_process(
-    temperature: float,
-    p_start: float,
-    p_end: float,
+    temp_val: float,
+    temp_unit: str,
+    p_start_val: float,
+    p_start_unit: str,
+    p_end_val: float,
+    p_end_unit: str,
     fluids: List[str],
     fractions: List[float],
     kij_matrix: np.ndarray,
@@ -178,9 +217,12 @@ def simulate_isothermal_process(
     (e.g., in nanopores or separation units).
 
     Args:
-        temperature (float): Constant absolute temperature of the system in Kelvin (K).
-        p_start (float): Initial absolute pressure of the system in Pascals (Pa).
-        p_end (float): Final absolute pressure of the system in Pascals (Pa).
+        temp_val (float): The numerical value of the constant absolute temperature.
+        temp_unit (str): The unit of the temperature as written in the prompt (e.g., 'C', 'F', 'K', 'R').
+        p_start_val (float): The numerical value of the initial absolute pressure.
+        p_start_unit (str): The unit of the initial pressure (e.g., 'Pa', 'atm', 'psi', 'bar', 'MPa').
+        p_end_val (float): The numerical value of the final absolute pressure.
+        p_end_unit (str): The unit of the final pressure (e.g., 'Pa', 'atm', 'psi', 'bar', 'MPa').
         fluids (List[str]): List of fluid names recognized by CoolProp.
         fractions (List[float]): Molar fractions of each component in the mixture.
         kij_matrix (np.ndarray): A 2D symmetric NumPy array of shape (n, n) representing 
@@ -200,11 +242,16 @@ def simulate_isothermal_process(
             - 'delta_G_J_mol' (List[float]): Change in residual Gibbs Free Energy relative to initial state (J/mol).
 
     Raises:
-        ValueError: If `temperature`, `p_start`, or `p_end` are less than or equal to zero.
+        ValueError: If `temperature`, `p_start`, or `p_end` are less than or equal to zero after conversion to SI.
         ValueError: Propagates EOS errors if physical boundaries are violated during 
                     the simulation (e.g., if volume attempts to drop below co-volume b_m 
                     at extreme pressures).
     """
+    # Convert inputs to SI units (Pa for pressure, K for temperature)
+    temperature = convert_temperature_to_si(temp_val, temp_unit)
+    p_start = convert_pressure_to_si(p_start_val, p_start_unit)
+    p_end = convert_pressure_to_si(p_end_val, p_end_unit)
+
     if temperature <= 0 or p_start <= 0 or p_end <= 0:
         raise ValueError("Temperature and Pressures must be strictly positive.")
         
@@ -216,13 +263,13 @@ def simulate_isothermal_process(
     delta_S: List[float] = []
     delta_G: List[float] = []
     
-    v_init = calculate_volume(p_start, temperature, fluids, fractions, kij_matrix)
-    h_init, s_init, g_init = _calculate_residual_properties(p_start, temperature, v_init, fluids, fractions, kij_matrix)
+    v_init = calculate_volume(p_start, 'Pa', temperature, 'K', fluids, fractions, kij_matrix)
+    h_init, s_init, g_init = _calculate_residual_properties(p_start, 'Pa', temperature, 'K', v_init, 'm^3/mol', fluids, fractions, kij_matrix)
     
     for p in p_space:
-        v = calculate_volume(p, temperature, fluids, fractions, kij_matrix)
+        v = calculate_volume(p, 'Pa', temperature, 'K', fluids, fractions, kij_matrix)
         z = (p * v) / (UNIVERSAL_GAS_CONSTANT * temperature)
-        h_res, s_res, g_res = _calculate_residual_properties(p, temperature, v, fluids, fractions, kij_matrix)
+        h_res, s_res, g_res = _calculate_residual_properties(p, 'Pa', temperature, 'K', v, 'm^3/mol', fluids, fractions, kij_matrix)
         
         volumes.append(float(v))
         z_factors.append(float(z))
@@ -242,9 +289,12 @@ def simulate_isothermal_process(
     }
 
 def simulate_isochoric_process(
-    v_m3_mol: float,
-    t_start: float,
-    t_end: float,
+    vol_val: float,
+    vol_unit: str,
+    t_start_val: float,
+    t_start_unit: str,
+    t_end_val: float,
+    t_end_unit: str,
     fluids: List[str],
     fractions: List[float],
     kij_matrix: np.ndarray,
@@ -260,9 +310,12 @@ def simulate_isochoric_process(
     a defined temperature range.
 
     Args:
-        v_m3_mol (float): Constant molar volume of the system in cubic meters per mole (m^3/mol).
-        t_start (float): Initial absolute temperature in Kelvin (K).
-        t_end (float): Final absolute temperature in Kelvin (K).
+        vol_val (float): The numerical value of the constant molar volume.
+        vol_unit (str): The unit of the molar volume as written in the prompt (e.g., 'm^3/mol', 'L/mol', 'cm^3/mol').
+        t_start_val (float): The numerical value of the initial absolute temperature.
+        t_start_unit (str): The unit of the initial temperature (e.g., 'C', 'F', 'K', 'R').
+        t_end_val (float): The numerical value of the final absolute temperature.
+        t_end_unit (str): The unit of the final temperature (e.g., 'C', 'F', 'K', 'R').
         fluids (List[str]): List of fluid names recognized by CoolProp.
         fractions (List[float]): Molar fractions of each component in the mixture.
         kij_matrix (np.ndarray): A 2D symmetric NumPy array of shape (n, n) representing 
@@ -285,10 +338,15 @@ def simulate_isochoric_process(
             - 'delta_A_J_mol' (List[float]): Change in residual Helmholtz Free Energy (J/mol).
 
     Raises:
-        ValueError: If `v_m3_mol`, `t_start`, or `t_end` are less than or equal to zero.
+        ValueError: If `vol_val`, `t_start_val`, or `t_end_val` are less than or equal to zero after conversion to SI.
         ValueError: Propagates EOS errors if the constant volume is mathematically 
                     invalid (e.g., if v_m3_mol <= b_m).
     """
+    # Convert inputs to SI units (m^3/mol for molar volume, K for temperature)
+    v_m3_mol = convert_molar_volume_to_si(vol_val, vol_unit)
+    t_start = convert_temperature_to_si(t_start_val, t_start_unit)
+    t_end = convert_temperature_to_si(t_end_val, t_end_unit)
+
     if v_m3_mol <= 0 or t_start <= 0 or t_end <= 0:
         raise ValueError("Molar volume and Temperatures must be strictly positive.")
         
@@ -303,9 +361,9 @@ def simulate_isochoric_process(
     delta_A: List[float] = []
     
     # --- Initial State Calculations ---
-    p_init = calculate_pressure(v_m3_mol, t_start, fluids, fractions, kij_matrix)
+    p_init = calculate_pressure(v_m3_mol, 'm^3/mol', t_start, 'K', fluids, fractions, kij_matrix)
     z_init = (p_init * v_m3_mol) / (UNIVERSAL_GAS_CONSTANT * t_start)
-    h_init, s_init, g_init = _calculate_residual_properties(p_init, t_start, v_m3_mol, fluids, fractions, kij_matrix)
+    h_init, s_init, g_init = _calculate_residual_properties(p_init, 'Pa', t_start, 'K', v_m3_mol, 'm^3/mol', fluids, fractions, kij_matrix)
     
     # Rigorous residual internal energy: U^R = H^R - RT(Z-1)
     u_init = h_init - UNIVERSAL_GAS_CONSTANT * t_start * (z_init - 1.0)
@@ -314,9 +372,9 @@ def simulate_isochoric_process(
     
     # --- Trajectory Calculations ---
     for t in t_space:
-        p = calculate_pressure(v_m3_mol, t, fluids, fractions, kij_matrix)
+        p = calculate_pressure(v_m3_mol, 'm^3/mol', t, 'K', fluids, fractions, kij_matrix)
         z = (p * v_m3_mol) / (UNIVERSAL_GAS_CONSTANT * t)
-        h_res, s_res, g_res = _calculate_residual_properties(p, t, v_m3_mol, fluids, fractions, kij_matrix)
+        h_res, s_res, g_res = _calculate_residual_properties(p, 'Pa', t, 'K', v_m3_mol, 'm^3/mol', fluids, fractions, kij_matrix)
         
         u_res = h_res - UNIVERSAL_GAS_CONSTANT * t * (z - 1.0)
         a_res = u_res - t * s_res
@@ -346,9 +404,12 @@ def simulate_isochoric_process(
     }
 
 def simulate_adiabatic_process(
-    p_start: float,
-    p_end: float,
-    t_start: float,
+    p_start_val: float,
+    p_start_unit: str,
+    p_end_val: float,
+    p_end_unit: str,
+    t_start_val: float,
+    t_start_unit: str,
     fluids: List[str],
     fractions: List[float],
     kij_matrix: np.ndarray,
@@ -368,9 +429,12 @@ def simulate_adiabatic_process(
     properties (\Delta H^R, \Delta S^R, \Delta G^R, \Delta U^R, \Delta A^R).
 
     Args:
-        p_start (float): Initial absolute pressure of the system in Pascals (Pa).
-        p_end (float): Final absolute pressure of the system in Pascals (Pa).
-        t_start (float): Initial absolute temperature in Kelvin (K).
+        p_start_val (float): The numerical value of the initial absolute pressure.
+        p_start_unit (str): The unit of the initial pressure (e.g., 'Pa', 'atm', 'psi', 'bar', 'MPa').
+        p_end_val (float): The numerical value of the final absolute pressure.
+        p_end_unit (str): The unit of the final pressure (e.g., 'Pa', 'atm', 'psi', 'bar', 'MPa').
+        t_start_val (float): The numerical value of the initial absolute temperature.
+        t_start_unit (str): The unit of the initial temperature (e.g., 'C', 'F', 'K', 'R').
         fluids (List[str]): List of fluid names recognized by CoolProp.
         fractions (List[float]): Molar fractions of each component in the mixture.
         kij_matrix (np.ndarray): A 2D symmetric NumPy array representing the 
@@ -394,19 +458,24 @@ def simulate_adiabatic_process(
             - 'delta_A_J_mol' (List[float]): Change in residual Helmholtz Free Energy (J/mol).
 
     Raises:
-        ValueError: If `p_start`, `p_end`, or `t_start` are less than or equal to zero.
+        ValueError: If `p_start`, `p_end`, or `t_start` are less than or equal to zero after conversion to SI.
         ValueError: If the numerical Secant solver fails to converge on a valid 
                     isentropic temperature for any given pressure point.
     """
+    # Convert inputs to SI units (Pa for pressure, K for temperature)
+    p_start = convert_pressure_to_si(p_start_val, p_start_unit)
+    p_end = convert_pressure_to_si(p_end_val, p_end_unit)
+    t_start = convert_temperature_to_si(t_start_val, t_start_unit)
+
     if p_start <= 0 or p_end <= 0 or t_start <= 0:
         raise ValueError("Pressures and Initial Temperature must be strictly positive.")
         
     p_space = np.linspace(p_start, p_end, points)
     
     # --- Initial State Calculations ---
-    v_init = calculate_volume(p_start, t_start, fluids, fractions, kij_matrix)
+    v_init = calculate_volume(p_start, 'Pa', t_start, 'K', fluids, fractions, kij_matrix)
     z_init = (p_start * v_init) / (UNIVERSAL_GAS_CONSTANT * t_start)
-    h_init, s_target, g_init = _calculate_residual_properties(p_start, t_start, v_init, fluids, fractions, kij_matrix)
+    h_init, s_target, g_init = _calculate_residual_properties(p_start, 'Pa', t_start, 'K', v_init, 'm^3/mol', fluids, fractions, kij_matrix)
     
     u_init = h_init - UNIVERSAL_GAS_CONSTANT * t_start * (z_init - 1.0)
     a_init = u_init - t_start * s_target
@@ -430,8 +499,8 @@ def simulate_adiabatic_process(
             if t_est <= 0:
                 return 1e9
             try:
-                v_est = calculate_volume(p, t_est, fluids, fractions, kij_matrix)
-                _, s_est, _ = _calculate_residual_properties(p, t_est, v_est, fluids, fractions, kij_matrix)
+                v_est = calculate_volume(p, 'Pa', t_est, 'K', fluids, fractions, kij_matrix)
+                _, s_est, _ = _calculate_residual_properties(p, 'Pa', t_est, 'K', v_est, 'm^3/mol', fluids, fractions, kij_matrix)
                 return s_est - s_target
             except ValueError:
                 return 1e9
@@ -449,9 +518,9 @@ def simulate_adiabatic_process(
             raise ValueError(f"Isentropic convergence failure at pressure P={p:.2e} Pa.")
             
         t_real = float(sol.root)
-        v_real = calculate_volume(p, t_real, fluids, fractions, kij_matrix)
+        v_real = calculate_volume(p, 'Pa', t_real, 'K', fluids, fractions, kij_matrix)
         z_real = (p * v_real) / (UNIVERSAL_GAS_CONSTANT * t_real)
-        h_real, s_real, g_real = _calculate_residual_properties(p, t_real, v_real, fluids, fractions, kij_matrix)
+        h_real, s_real, g_real = _calculate_residual_properties(p, 'Pa', t_real, 'K', v_real, 'm^3/mol', fluids, fractions, kij_matrix)
         
         u_real = h_real - UNIVERSAL_GAS_CONSTANT * t_real * (z_real - 1.0)
         a_real = u_real - t_real * s_real

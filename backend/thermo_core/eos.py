@@ -3,6 +3,17 @@ import scipy.optimize as opt
 import CoolProp.CoolProp as CP
 from typing import Tuple, List
 
+from utils.conversions import (
+    convert_temperature_to_si,
+    convert_pressure_to_si,
+    convert_volume_to_si,
+    convert_molar_volume_to_si,
+    convert_energy_to_si,
+    convert_molar_energy_to_si,
+    convert_molar_entropy_to_si,
+    convert_amount_to_moles
+    )
+
 # Universal gas constant in J/(mol*K)
 UNIVERSAL_GAS_CONSTANT = 8.314462618
 
@@ -29,7 +40,8 @@ def get_gas_properties(fluids: List[str]) -> Tuple[np.ndarray, np.ndarray, np.nd
 
 
 def calculate_pr_parameters(
-    temperature: float, 
+    temp_val: float,
+    temp_unit: str,
     fluids: List[str], 
     fractions: List[float], 
     kij_matrix: np.ndarray
@@ -39,7 +51,8 @@ def calculate_pr_parameters(
     for a multicomponent mixture using Van der Waals mixing rules.
 
     Args:
-        temperature (float): Absolute temperature of the system in Kelvin (K).
+        temp_val (float): The numerical value of the system's temperature.
+        temp_unit (str): The unit of the temperature as written in the prompt (e.g., 'C', 'F', 'K', 'R').
         fluids (List[str]): List of fluid names as recognized by CoolProp.
         fractions (List[float]): Molar fractions of each component in the mixture.
         kij_matrix (np.ndarray): A 2D symmetric NumPy array of shape (n, n) representing 
@@ -52,12 +65,16 @@ def calculate_pr_parameters(
             - da_dT_m (float): The analytical derivative of a_m with respect to temperature.
 
     Raises:
-        ValueError: If temperature is less than or equal to zero.
+        ValueError: If temperature is less than or equal to zero after conversion to SI (Kelvin).
         ValueError: If the list of fluids is empty.
         ValueError: If the length of fractions does not match the number of fluids.
         ValueError: If the kij_matrix is not a square matrix of size (n, n).
         ValueError: If any molar fraction is negative or if they do not sum to 1.0.
     """
+
+    # Convert temperature to SI units (Kelvin)
+    temperature = convert_temperature_to_si(temp_val, temp_unit)
+
     if temperature <= 0:
         raise ValueError("Temperature must be strictly positive (T > 0).")
         
@@ -110,8 +127,10 @@ def calculate_pr_parameters(
 
 
 def calculate_pressure(
-    volume: float, 
-    temperature: float, 
+    vol_val: float,
+    vol_unit: str,
+    temp_val: float,
+    temp_unit: str,
     fluids: List[str], 
     fractions: List[float], 
     kij_matrix: np.ndarray
@@ -121,8 +140,10 @@ def calculate_pressure(
     using the Peng-Robinson Equation of State.
 
     Args:
-        volume (float): Molar volume of the system in m^3/mol.
-        temperature (float): Absolute temperature of the system in Kelvin (K).
+        vol_val (float): The numerical value of the molar volume.
+        vol_unit (str): The unit of the molar volume as written in the prompt (e.g., 'm^3/mol', 'L/mol', 'cm^3/mol').
+        temp_val (float): The numerical value of the absolute temperature.
+        temp_unit (str): The unit of the temperature as written in the prompt (e.g., 'C', 'F', 'K', 'R').
         fluids (List[str]): List of fluid names recognized by CoolProp.
         fractions (List[float]): Molar fractions of each component in the mixture.
         kij_matrix (np.ndarray): A 2D symmetric NumPy array representing the 
@@ -132,17 +153,21 @@ def calculate_pressure(
         float: Calculated pressure in Pascals (Pa).
 
     Raises:
-        ValueError: If molar volume or temperature is less than or equal to zero.
+        ValueError: If molar volume or temperature is less than or equal to zero after conversion to SI.
         ValueError: If the molar volume is less than or equal to the mixture co-volume (b_m),
                     which is physically impossible and causes mathematical singularities.
     """
+    # Convert inputs to SI units (m^3/mol for volume, K for temperature)
+    volume = convert_molar_volume_to_si(vol_val, vol_unit)
+    temperature = convert_temperature_to_si(temp_val, temp_unit)
+
     if volume <= 0:
         raise ValueError("Molar volume must be strictly positive (V > 0).")
     if temperature <= 0:
         raise ValueError("Temperature must be strictly positive (T > 0).")
 
     # Fetch mixture parameters
-    a_m, b_m, _ = calculate_pr_parameters(temperature, fluids, fractions, kij_matrix)
+    a_m, b_m, _ = calculate_pr_parameters(temperature, 'K', fluids, fractions, kij_matrix)
     
     # Critical Physical Validation: Volume must be greater than the excluded volume
     if volume <= b_m:
@@ -159,8 +184,10 @@ def calculate_pressure(
 
 
 def calculate_volume(
-    pressure: float, 
-    temperature: float, 
+    press_val: float,
+    press_unit: str,
+    temp_val: float,
+    temp_unit: str,
     fluids: List[str], 
     fractions: List[float], 
     kij_matrix: np.ndarray
@@ -173,8 +200,10 @@ def calculate_volume(
     to the stable gas, vapor, or supercritical phase.
 
     Args:
-        pressure (float): Absolute pressure of the system in Pascals (Pa).
-        temperature (float): Absolute temperature of the system in Kelvin (K).
+        press_val (float): The numerical value of the absolute pressure.
+        press_unit (str): The unit of the pressure as written in the prompt (e.g., 'Pa', 'atm', 'psi', 'bar', 'MPa').
+        temp_val (float): The numerical value of the absolute temperature.
+        temp_unit (str): The unit of the temperature as written in the prompt (e.g., 'C', 'F', 'K', 'R').
         fluids (List[str]): List of fluid names recognized by CoolProp.
         fractions (List[float]): Molar fractions of each component in the mixture.
         kij_matrix (np.ndarray): A 2D symmetric NumPy array representing the 
@@ -184,20 +213,24 @@ def calculate_volume(
         float: Calculated molar volume in m^3/mol.
 
     Raises:
-        ValueError: If pressure or temperature is less than or equal to zero.
+        ValueError: If pressure or temperature is less than or equal to zero after conversion to SI.
         ValueError: If no valid positive real roots are found for Z.
         ValueError: If the calculated volume is physically impossible (V <= b_m).
     """
+    # Convert inputs to SI units (Pa for pressure, K for temperature)
+    pressure = convert_pressure_to_si(press_val, press_unit)
+    temperature = convert_temperature_to_si(temp_val, temp_unit)
+
     if pressure <= 0:
         raise ValueError("Pressure must be strictly positive (P > 0).")
     if temperature <= 0:
         raise ValueError("Temperature must be strictly positive (T > 0).")
 
     # Fetch mixture parameters
-    a_m, b_m, _ = calculate_pr_parameters(temperature, fluids, fractions, kij_matrix)
+    a_m, b_m, _ = calculate_pr_parameters(temperature, 'K', fluids, fractions, kij_matrix)
     
     # Solve for Z (maximum real root for vapor/gas phase)
-    z_max = calculate_compressibility_factor(pressure, temperature, a_m, b_m)
+    z_max = calculate_compressibility_factor(pressure, 'Pa', temperature, 'K', a_m, b_m)
     
     # Calculate volume using the real gas law
     molar_volume = z_max * UNIVERSAL_GAS_CONSTANT * temperature / pressure
@@ -213,8 +246,10 @@ def calculate_volume(
 
 
 def calculate_temperature(
-    pressure: float, 
-    volume: float, 
+    press_val: float,
+    press_unit: str,
+    vol_val: float,
+    vol_unit: str,
     fluids: List[str], 
     fractions: List[float], 
     kij_matrix: np.ndarray
@@ -230,8 +265,10 @@ def calculate_temperature(
     mixture's pseudo-critical temperature (Kay's rule).
 
     Args:
-        pressure (float): Target absolute pressure in Pascals (Pa).
-        volume (float): Molar volume of the system in m^3/mol.
+        press_val (float): The numerical value of the target absolute pressure.
+        press_unit (str): The unit of the pressure as written in the prompt (e.g., 'Pa', 'atm', 'psi', 'bar', 'MPa').
+        vol_val (float): The numerical value of the molar volume.
+        vol_unit (str): The unit of the molar volume as written in the prompt (e.g., 'm^3/mol', 'L/mol', 'cm^3/mol').
         fluids (List[str]): List of fluid names recognized by CoolProp.
         fractions (List[float]): Molar fractions of each component in the mixture.
         kij_matrix (np.ndarray): A 2D symmetric NumPy array representing the 
@@ -241,12 +278,16 @@ def calculate_temperature(
         float: Calculated absolute temperature in Kelvin (K).
 
     Raises:
-        ValueError: If pressure or volume is less than or equal to zero.
+        ValueError: If pressure or volume is less than or equal to zero after conversion to SI.
         ValueError: If the calculated state implies a volume smaller than the 
                     mixture's co-volume (b_m).
         ValueError: If the root-finding algorithm fails to converge within the 
                     established temperature bracket.
     """
+    # Convert inputs to SI units (Pa for pressure, m^3/mol for molar volume)
+    pressure = convert_pressure_to_si(press_val, press_unit)
+    volume = convert_molar_volume_to_si(vol_val, vol_unit)
+
     if pressure <= 0:
         raise ValueError("Pressure must be strictly positive (P > 0).")
     if volume <= 0:
@@ -259,7 +300,7 @@ def calculate_temperature(
 
     def objective_function(t_est: float) -> float:
         # calculate_pressure will naturally raise a ValueError if volume <= b_m
-        return calculate_pressure(volume, t_est, fluids, fractions, kij_matrix) - pressure
+        return calculate_pressure(volume, 'm^3/mol', t_est, 'K', fluids, fractions, kij_matrix) - pressure
 
     try:
         # Brent's method requires the root to be bracketed between f(a) and f(b) with opposite signs
@@ -282,8 +323,10 @@ def calculate_temperature(
 
 
 def calculate_compressibility_factor(
-    pressure: float, 
-    temperature: float, 
+    press_val: float,
+    press_unit: str,
+    temp_val: float,
+    temp_unit: str,
     a: float, 
     b: float
 ) -> float:
@@ -296,8 +339,10 @@ def calculate_compressibility_factor(
     or supercritical phase.
 
     Args:
-        pressure (float): Absolute pressure of the system in Pascals (Pa).
-        temperature (float): Absolute temperature of the system in Kelvin (K).
+        press_val (float): The numerical value of the absolute pressure.
+        press_unit (str): The unit of the pressure as written in the prompt (e.g., 'Pa', 'atm', 'psi', 'bar', 'MPa').
+        temp_val (float): The numerical value of the absolute temperature.
+        temp_unit (str): The unit of the temperature as written in the prompt (e.g., 'C', 'F', 'K', 'R').
         a (float): The Peng-Robinson attraction parameter (pure or mixture).
         b (float): The Peng-Robinson co-volume parameter (pure or mixture).
 
@@ -305,9 +350,13 @@ def calculate_compressibility_factor(
         float: The compressibility factor (Z), dimensionless.
 
     Raises:
-        ValueError: If pressure or temperature is less than or equal to zero.
+        ValueError: If pressure or temperature is less than or equal to zero after conversion to SI.
         ValueError: If no valid positive real roots are found.
     """
+    # Convert inputs to SI units (Pa for pressure, K for temperature)
+    pressure = convert_pressure_to_si(press_val, press_unit)
+    temperature = convert_temperature_to_si(temp_val, temp_unit)
+
     if pressure <= 0:
         raise ValueError("Pressure must be strictly positive (P > 0).")
     if temperature <= 0:
