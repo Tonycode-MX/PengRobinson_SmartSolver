@@ -170,7 +170,6 @@
             })
             .then(response => {
                 if (!response.ok) {
-                    // CORRECCIÓN: Comillas invertidas añadidas
                     throw new Error(`HTTP transaction failure protocol: Status code ${response.status}`);
                 }
                 return response.json();
@@ -198,25 +197,20 @@
                     // C. Map background Python array strings logs line-by-line into terminal console
                     if (data.terminal_logs && Array.isArray(data.terminal_logs)) {
                         data.terminal_logs.forEach(logLine => {
-                            // CORRECCIÓN: Comillas invertidas añadidas
                             terminalLogs.innerHTML += `<div class="text-zinc-400">> ${logLine}</div>`;
                         });
                     }
-                    // CORRECCIÓN: Comillas invertidas añadidas
                     terminalLogs.innerHTML += `<div class="text-emerald-400 font-medium">> [SUCCESS] Cognitive LangChain core execution resolved perfectly.</div>`;
 
                     // D. Safely clear vector placeholder graphics and activate interactive Plotly node map
                     if (data.plotly_data && data.plotly_data.data) {
                         
-                        // 1. Ocultamos el mensaje de espera
                         if (canvasPlaceholder) {
                             canvasPlaceholder.style.display = 'none';
                         }
                         
-                        // 2. Hacemos visible el lienzo de Plotly
                         plotlyRenderTarget.classList.remove('hidden');
                         
-                        // 3. Renderizamos la gráfica en el contenedor correcto
                         Plotly.newPlot(plotlyRenderTarget, data.plotly_data.data, data.plotly_data.layout, {
                             responsive: true,
                             displaylogo: false
@@ -224,7 +218,6 @@
                     }
 
                 } else {
-                    // CORRECCIÓN: Comillas invertidas añadidas
                     terminalLogs.innerHTML += `<div class="text-red-400 font-medium">> [CORE LOGIC FAILURE] Exception reported: ${data.message}</div>`;
                 }
 

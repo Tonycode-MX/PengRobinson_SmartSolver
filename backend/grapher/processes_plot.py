@@ -118,7 +118,6 @@ def plot_thermodynamic_process(process_data: dict, fluids: list, fractions: list
     # 5. Global Aesthetic Formatting (Plotly White Standard)
     mixture_format = ", ".join([f"{f} ({x*100:.1f}%)" for f, x in zip(fluids, fractions)])
     
-    # Translate process names for user interface titles
     process_translation = {
         "Isobaric": "Isobaric",
         "Isothermal": "Isothermal",
@@ -128,33 +127,30 @@ def plot_thermodynamic_process(process_data: dict, fluids: list, fractions: list
     translated_name = process_translation.get(process_name, process_name)
 
     fig.update_layout(
+        autosize=True,
         title=dict(
             text=f"<b>Advanced Peng-Robinson EOS Simulator — {translated_name} Process</b><br><sub>Multicomponent Mixture: {mixture_format}</sub>",
             x=0.5,
             xanchor='center',
+            y=0.90,
             font=dict(size=16)
         ),
         template="plotly_white",
+        
         legend=dict(
             orientation="h", 
-            yanchor="bottom", y=1.05, 
+            yanchor="top", y=-0.2,
             xanchor="center", x=0.5
         ),
-        margin=dict(t=100, b=50, l=50, r=50)
+        
+        margin=dict(t=130, b=100, l=90, r=60) 
     )
     
-    # Axis configuration
-    fig.update_xaxes(title_text=x_label_display, row=1, col=1)
-    fig.update_xaxes(title_text=x_label_display, row=1, col=2)
-    fig.update_yaxes(title_text="Z Factor (Dimensionless)", row=1, col=1)
-    fig.update_yaxes(title_text="Molar Volume (m³/mol)", row=1, col=2, secondary_y=False)
-    fig.update_yaxes(title_text="Energetic Properties (J/mol)", row=1, col=2, secondary_y=True)
-    #fig.update_yaxes(title_text="Actual Thermodynamic Properties", row=1, col=2)
-    
-    # Launch interactive dashboard in default web browser
-    #fig.show()
-    #fig.write_html("dashboard_termodinamico.html", auto_open=True, include_plotlyjs="cdn")
-    #fig.write_json("latest_plot.json")
+    fig.update_xaxes(title_text=x_label_display, automargin=True, row=1, col=1)
+    fig.update_xaxes(title_text=x_label_display, automargin=True, row=1, col=2)
+    fig.update_yaxes(title_text="Z Factor (Dimensionless)", automargin=True, row=1, col=1)
+    fig.update_yaxes(title_text="Molar Volume (m³/mol)", automargin=True, row=1, col=2, secondary_y=False)
+    fig.update_yaxes(title_text="Energetic Properties (J/mol)", automargin=True, row=1, col=2, secondary_y=True)
 
     with open("latest_plot.json", "w", encoding="utf-8") as f:
         fig.write_json(f)
