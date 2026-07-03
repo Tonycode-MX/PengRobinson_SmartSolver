@@ -14,10 +14,11 @@ if BACKEND_ROOT not in sys.path:
 
 from agents.llm_setup import llm
 from utils.conversions import conversion_tools_list
-from grapher.hydrogel_plots import HydrogelGrapher
+# Import the newly developed 3D analytical engine
+from grapher.hydrogel_plots import HydrogelGrapher3D
 
-# Initialize a persistent singleton instance of the local Plotly data serialization engine
-graph_engine = HydrogelGrapher()
+# Initialize a persistent singleton instance of the local 3D Plotly serialization engine
+graph_engine = HydrogelGrapher3D()
 
 # Persistent operational laboratory state baseline memory registry (Simulated RAM Database)
 LAB_NOMINAL_MEMORY: Dict[str, float] = {
@@ -68,7 +69,8 @@ def tool_modify_and_simulate_hydrogel(
 ) -> str:
     """
     Transforms continuous process values, enforces physical safety constraints, 
-    and executes a high-fidelity stochastic Monte Carlo distribution loop (10,000 samples).
+    and executes a high-fidelity stochastic Monte Carlo distribution loop (10,000 samples)
+    generating a 3D response surface of joint probability density profiles.
     
     Args:
         parameter_key (str): Target parameter. Must be one of: 'voltage_kv', 'viscosity_pa_s', 'flow_rate_ml_h', 'temperature_celsius', 'current_ua'.
@@ -136,10 +138,12 @@ def tool_modify_and_simulate_hydrogel(
     fallback_laboratory_data = [215.4, 222.1, 219.8, 228.3, 211.0, 220.5]
     active_lab_array = experimental_batch_nm if experimental_batch_nm else fallback_laboratory_data
 
-    # Compile the resulting matrix arrays into a single raw Plotly JSON document
-    serialized_chart_json = graph_engine.generate_distribution_histogram_json(
-        simulated_diameters,
-        active_lab_array
+    # Compile the resulting matrix arrays into a single raw Plotly 3D JSON document
+    # Passes voltages array explicitly to construct the joint multi-variable X-Y grid plane
+    serialized_chart_json = graph_engine.generate_surface_distribution_3d_json(
+        simulated_diameters=simulated_diameters,
+        voltages_kv=voltages.tolist(),
+        experimental_diameters=active_lab_array
     )
 
     # Cache the rendering context payload inside environmental communication variables
@@ -160,7 +164,7 @@ def tool_modify_and_simulate_hydrogel(
         "\n--- STOCHASTIC DISTRIBUTIONS ANALYTICS ---\n"
         f"• Predicted Mean Fiber Size: {np.mean(simulated_diameters):.2f} nm\n"
         f"• Predicted Geometric Standard Deviation: {np.std(simulated_diameters):.2f} nm\n"
-        "• Plotly Multi-Layer Chart Matrix Status: JSON payload compiled successfully."
+        "• Plotly Multi-Layer 3D Surface Status: JSON payload compiled successfully."
     )
     return output_string
 
