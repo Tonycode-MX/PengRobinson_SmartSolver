@@ -1,5 +1,35 @@
 # PengRobinson_SmartSolver
 
+## Repository Structure
+
+```text
+PengRobinson_SmartSolver/
+├── backend/                 # Backend logic, calculations, and AI integration
+│   ├── agents/              # AI agents and LLM configuration
+│   │   ├── __init__.py
+│   │   ├── llm_setup.py
+│   │   ├── orchestrator.py  
+│   │   └── thermo_specialist.py
+│   ├── grapher/             # Plotting and visualization modules
+│   │   └── processes_plot.py
+│   ├── thermo_core/         # Core thermodynamic equations and processes
+│   │   ├── eos.py
+│   │   └── processes.py
+│   ├── utils/               # Helper functions and utilities
+│   │   ├── callbacks.py
+│   │   └── conversions.py
+│   └── main.py              # Main backend entry point
+├── environment/             # Conda environment configuration files
+├── frontend/                # User interface files
+│   └── index.html           # Main entry point for the web UI
+├── .env                     # Environment variables (ignored by Git)
+├── .gitignore               # Specifies files to exclude from version control
+├── requirements.txt         # Python project dependencies
+└── README.md                # Project documentation and usage instructions
+
+
+
+
 ## Running the Application
 
 To run the program, you need to start the backend process first and then launch the frontend interface. Follow these steps:
