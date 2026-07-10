@@ -5,7 +5,6 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import Tool, tool
 
 from agents.llm_setup import llm
-from utils.conversions import conversion_tools_list
 
 from thermo_core.processes import (
     simulate_isobaric_process,
@@ -20,9 +19,12 @@ from grapher.processes_plot import plot_thermodynamic_process
 # =====================================================================
 @tool
 def tool_isothermal_process(
-    temperature: float, 
-    p_start: float, 
-    p_end: float, 
+    temp_val: float,
+    temp_unit: str,
+    p_start_val: float,
+    p_start_unit: str,
+    p_end_val: float,
+    p_end_unit: str,
     fluids: List[str], 
     fractions: List[float]
 ) -> str:
@@ -35,9 +37,12 @@ def tool_isothermal_process(
     and returns the key physical property shifts to the agent.
     
     Args:
-        temperature (float): The constant absolute temperature of the system in Kelvin (K).
-        p_start (float): The initial absolute pressure in Pascals (Pa).
-        p_end (float): The final absolute pressure in Pascals (Pa).
+        temp_val (float): The numerical value of the constant absolute temperature.
+        temp_unit (str): The unit of the temperature (e.g., 'C', 'F', 'K', 'R').
+        p_start_val (float): The numerical value of the initial absolute pressure.
+        p_start_unit (str): The unit of the initial pressure (e.g., 'Pa', 'atm', 'psi', 'bar', 'MPa').
+        p_end_val (float): The numerical value of the final absolute pressure.
+        p_end_unit (str): The unit of the final pressure (e.g., 'Pa', 'atm', 'psi', 'bar', 'MPa').
         fluids (List[str]): List of valid fluid names (e.g., ['Methane', 'Ethane']).
         fractions (List[float]): List of molar fractions corresponding to the fluids (must sum to 1.0).
         
@@ -47,8 +52,13 @@ def tool_isothermal_process(
     # Initialize a zero-matrix for binary interaction parameters (k_ij)
     kij = np.zeros((len(fluids), len(fluids)))
     
-    # Execute the backend mathematical simulation
-    data = simulate_isothermal_process(temperature, p_start, p_end, fluids, fractions, kij)
+    # Execute the backend mathematical simulation with separated values and units
+    data = simulate_isothermal_process(
+        temp_val, temp_unit, 
+        p_start_val, p_start_unit, 
+        p_end_val, p_end_unit, 
+        fluids, fractions, kij
+    )
     
     # Dispatch the resulting trajectory to the local Plotly renderer
     plot_thermodynamic_process(data, fluids, fractions) 
@@ -66,9 +76,12 @@ def tool_isothermal_process(
 
 @tool
 def tool_isobaric_process(
-    pressure: float, 
-    t_start: float, 
-    t_end: float, 
+    press_val: float,
+    press_unit: str,
+    t_start_val: float,
+    t_start_unit: str,
+    t_end_val: float,
+    t_end_unit: str,
     fluids: List[str], 
     fractions: List[float]
 ) -> str:
@@ -80,9 +93,12 @@ def tool_isobaric_process(
     an HTML dashboard and returns the key physical property shifts to the agent.
     
     Args:
-        pressure (float): The constant absolute pressure of the system in Pascals (Pa).
-        t_start (float): The initial absolute temperature in Kelvin (K).
-        t_end (float): The final absolute temperature in Kelvin (K).
+        press_val (float): The numerical value of the constant absolute pressure.
+        press_unit (str): The unit of the pressure (e.g., 'Pa', 'atm', 'psi', 'bar', 'MPa').
+        t_start_val (float): The numerical value of the initial absolute temperature.
+        t_start_unit (str): The unit of the initial temperature (e.g., 'C', 'F', 'K', 'R').
+        t_end_val (float): The numerical value of the final absolute temperature.
+        t_end_unit (str): The unit of the final temperature (e.g., 'C', 'F', 'K', 'R').
         fluids (List[str]): List of valid fluid names (e.g., ['Methane', 'Ethane']).
         fractions (List[float]): List of molar fractions corresponding to the fluids (must sum to 1.0).
         
@@ -92,8 +108,13 @@ def tool_isobaric_process(
     # Initialize a zero-matrix for binary interaction parameters (k_ij)
     kij = np.zeros((len(fluids), len(fluids)))
     
-    # Execute the backend mathematical simulation
-    data = simulate_isobaric_process(pressure, t_start, t_end, fluids, fractions, kij)
+    # Execute the backend mathematical simulation with the separated values and units
+    data = simulate_isobaric_process(
+        press_val, press_unit, 
+        t_start_val, t_start_unit, 
+        t_end_val, t_end_unit, 
+        fluids, fractions, kij
+    )
     
     # Dispatch the resulting trajectory to the local Plotly renderer
     plot_thermodynamic_process(data, fluids, fractions) 
@@ -111,9 +132,12 @@ def tool_isobaric_process(
 
 @tool
 def tool_adiabatic_process(
-    p_start: float, 
-    p_end: float, 
-    t_start: float, 
+    p_start_val: float,
+    p_start_unit: str,
+    p_end_val: float,
+    p_end_unit: str,
+    t_start_val: float,
+    t_start_unit: str,
     fluids: List[str], 
     fractions: List[float]
 ) -> str:
@@ -126,9 +150,12 @@ def tool_adiabatic_process(
     dashboard, and returns the key physical property shifts to the agent.
     
     Args:
-        p_start (float): The initial absolute pressure of the system in Pascals (Pa).
-        p_end (float): The final absolute pressure of the system in Pascals (Pa).
-        t_start (float): The initial absolute temperature in Kelvin (K).
+        p_start_val (float): The numerical value of the initial absolute pressure.
+        p_start_unit (str): The unit of the initial pressure (e.g., 'Pa', 'atm', 'psi', 'bar', 'MPa').
+        p_end_val (float): The numerical value of the final absolute pressure.
+        p_end_unit (str): The unit of the final pressure (e.g., 'Pa', 'atm', 'psi', 'bar', 'MPa').
+        t_start_val (float): The numerical value of the initial absolute temperature.
+        t_start_unit (str): The unit of the initial temperature (e.g., 'C', 'F', 'K', 'R').
         fluids (List[str]): List of valid fluid names (e.g., ['Methane', 'Ethane']).
         fractions (List[float]): List of molar fractions corresponding to the fluids (must sum to 1.0).
         
@@ -138,8 +165,13 @@ def tool_adiabatic_process(
     # Initialize a zero-matrix for binary interaction parameters (k_ij)
     kij = np.zeros((len(fluids), len(fluids)))
     
-    # Execute the backend mathematical simulation
-    data = simulate_adiabatic_process(p_start, p_end, t_start, fluids, fractions, kij)
+    # Execute the backend mathematical simulation with separated values and units
+    data = simulate_adiabatic_process(
+        p_start_val, p_start_unit, 
+        p_end_val, p_end_unit, 
+        t_start_val, t_start_unit, 
+        fluids, fractions, kij
+    )
     
     # Dispatch the resulting trajectory to the local Plotly renderer
     plot_thermodynamic_process(data, fluids, fractions) 
@@ -158,9 +190,12 @@ def tool_adiabatic_process(
 
 @tool
 def tool_isochoric_process(
-    v_m3_mol: float, 
-    t_start: float, 
-    t_end: float, 
+    vol_val: float,
+    vol_unit: str,
+    t_start_val: float,
+    t_start_unit: str,
+    t_end_val: float,
+    t_end_unit: str,
     fluids: List[str], 
     fractions: List[float]
 ) -> str:
@@ -173,9 +208,12 @@ def tool_isochoric_process(
     and entropy. It renders an HTML dashboard and returns the key physical shifts to the agent.
     
     Args:
-        v_m3_mol (float): The constant molar volume of the system in cubic meters per mole (m³/mol).
-        t_start (float): The initial absolute temperature in Kelvin (K).
-        t_end (float): The final absolute temperature in Kelvin (K).
+        vol_val (float): The numerical value of the constant molar volume.
+        vol_unit (str): The unit of the molar volume (e.g., 'm^3/mol', 'L/mol', 'cm^3/mol').
+        t_start_val (float): The numerical value of the initial absolute temperature.
+        t_start_unit (str): The unit of the initial temperature (e.g., 'C', 'F', 'K', 'R').
+        t_end_val (float): The numerical value of the final absolute temperature.
+        t_end_unit (str): The unit of the final temperature (e.g., 'C', 'F', 'K', 'R').
         fluids (List[str]): List of valid fluid names (e.g., ['Methane', 'Ethane']).
         fractions (List[float]): List of molar fractions corresponding to the fluids (must sum to 1.0).
         
@@ -185,8 +223,13 @@ def tool_isochoric_process(
     # Initialize a zero-matrix for binary interaction parameters (k_ij)
     kij = np.zeros((len(fluids), len(fluids)))
     
-    # Execute the backend mathematical simulation
-    data = simulate_isochoric_process(v_m3_mol, t_start, t_end, fluids, fractions, kij)
+    # Execute the backend mathematical simulation with separated values and units
+    data = simulate_isochoric_process(
+        vol_val, vol_unit, 
+        t_start_val, t_start_unit, 
+        t_end_val, t_end_unit, 
+        fluids, fractions, kij
+    )
     
     # Dispatch the resulting trajectory to the local Plotly renderer
     plot_thermodynamic_process(data, fluids, fractions) 
@@ -204,7 +247,7 @@ def tool_isochoric_process(
     )
 
 # Combinamos las utilidades externas con las herramientas expertas locales
-thermo_tools = conversion_tools_list + [
+thermo_tools = [
     tool_isothermal_process, 
     tool_isobaric_process, 
     tool_adiabatic_process,
@@ -219,9 +262,9 @@ thermo_prompt = ChatPromptTemplate.from_messages([
     You execute high-fidelity calculations using the Peng-Robinson Equation of State.
     
     Always execute steps in this STRICT order:
-    1. If the user provides pressure, temperature, OR VOLUME in non-SI units, YOU MUST use the appropriate conversion tools to get exact values in Pascals (Pa), Kelvin (K), and cubic meters per mole (m^3/mol).
-    2. Call the appropriate simulation tool (e.g., tool_isothermal_process, tool_isochoric_process) using ONLY the converted pure SI values.
-    3. The simulation tool will automatically plot the data and return a text summary of the results to you.
+    1. Read the extracted problem details provided by the Orchestrator, which includes numerical values and their exact units.
+    2. Call the appropriate simulation tool (e.g., tool_isothermal_process, tool_isochoric_process) passing the EXACT numerical values and unit strings provided. DO NOT ATTEMPT TO CONVERT UNITS.
+    3. The backend simulation will automatically convert the units, plot the data, and return a text summary of the results to you.
     4. Present this summary to the user clearly and professionally using Markdown formatting (bullet points and bold text). 
     5. Briefly add a 1-2 sentence scientific interpretation of the key energy shifts (e.g., what the change in Gibbs, Helmholtz, or Entropy implies physically for the system). Do not make up numbers; use only what the tool returns."""),
     ("placeholder", "{chat_history}"),
@@ -240,6 +283,6 @@ def thermo_specialist_tool(query: str) -> str:
     trajectories (e.g., isobaric, isothermal, isochoric, adiabatic), or 
     P-V-T state properties. You MUST pass the fully extracted problem details 
     as the input, including fluid names in standard English, molar fractions, 
-    and exact state variables with their original units (including volume or molar volume if provided).
+    and exact state variables with their original units explicitly separated (e.g. Value: 450, Unit: 'F').
     """
     return thermo_executor.invoke({"input": query})["output"]
