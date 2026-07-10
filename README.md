@@ -29,20 +29,20 @@ PengRobinson_SmartSolver/
 ```
 
 
-### Virtual Environment Setup
+## Virtual Environment Setup
 
 Inside the `environment/` directory, you will find the `requirements.txt` file. This file contains the exported dependencies necessary to replicate the environment and run the code in this repository.
 
 To set up the environment, we recommend using Python's built-in `venv` module. Open your terminal, navigate to the `PengRobinson_SmartSolver/` main directory, and follow these steps:
 
-**1. Create the virtual environment**
+### 1. Create the virtual environment
 Create a new virtual environment named `PR_SS_env` by running:
 
 ```bash
 python -m venv PR_SS_env
 ```
 
-**2. Activate the environment**
+### 2. Activate the environment
 
 On Windows:
 
@@ -56,7 +56,7 @@ On macOS and Linux:
 source PR_SS_env/bin/activate
 ```
 
-**3. Install the exported dependencies**
+### 3. Install the exported dependencies
 Once the environment is activated (you should see (PR_SS_env) at the beginning of your terminal prompt), install the required packages from the exported file:
 
 ```bash
