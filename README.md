@@ -26,6 +26,7 @@ PengRobinson_SmartSolver/
 ├── .gitignore               # Specifies files to exclude from version control
 ├── requirements.txt         # Python project dependencies
 └── README.md                # Project documentation and usage instructions
+```
 
 
 
