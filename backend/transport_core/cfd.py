@@ -112,8 +112,16 @@ def solve_navier_stokes(
         laplace_u_prev = laplacian(u_prev, element_length)
         laplace_v_prev = laplacian(v_prev, element_length)
         
-        u_tentative = (u_prev + time_step_length * (-u_prev * du_prev_dx + v_prev * du_prev_dy) + kinematic_viscosity * laplace_u_prev)
-        v_tentative = (v_prev + time_step_length * (-u_prev * dv_prev_dx + v_prev * dv_prev_dy) + kinematic_viscosity * laplace_v_prev)
+        # 2. Tentative step (solving the momentum equation without the pressure gradient term)
+        u_tentative = (
+            u_prev + 
+            time_step_length * (-u_prev * du_prev_dx - v_prev * du_prev_dy + kinematic_viscosity * laplace_u_prev)
+        )
+        
+        v_tentative = (
+            v_prev + 
+            time_step_length * (-u_prev * dv_prev_dx - v_prev * dv_prev_dy + kinematic_viscosity * laplace_v_prev)
+        )
 
         u_tentative[0, :] = 0.0
         u_tentative[:, 0] = 0.0
