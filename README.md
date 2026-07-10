@@ -1,5 +1,22 @@
 # PengRobinson_SmartSolver
 
+This project was developed within the framework of the **Verano Delfín 2026** research program. The core objective of this repository is to provide a smart tool that integrates Artificial Intelligence (AI) agents capable of orchestrating backend functions to solve complex thermodynamic problems through a conversational chatbot interface.
+
+By leveraging the **Peng-Robinson Equation of State**, the application allows users to input thermodynamic problems related to various system changes, specifically:
+* Adiabatic processes
+* Isochoric processes
+* Isothermal processes
+* Isobaric processes
+
+The AI agent interprets the natural language prompt, selects the appropriate mathematical models, and returns detailed technical insights. The solver's outputs include:
+* The initial and final compressibility factors ($Z$).
+* Thermodynamic residual properties.
+* An automated plot illustrating the system's behavior and state changes throughout the process.
+
+This tool aims to bridge the gap between complex chemical engineering calculations and intuitive user interfaces, making thermodynamic analysis faster and more accessible.
+
+
+
 ## Repository Structure
 
 ```text
