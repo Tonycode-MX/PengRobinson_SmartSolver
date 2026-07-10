@@ -4,7 +4,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 
 load_dotenv()
-
+'''
 llm_gemini = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
     temperature=0,
@@ -12,7 +12,7 @@ llm_gemini = ChatGoogleGenerativeAI(
     max_retries=5,
     verbose=False
 )
-
+'''
 llm_groq = ChatGroq(
     model_name="llama-3.3-70b-versatile", 
     temperature=0,
