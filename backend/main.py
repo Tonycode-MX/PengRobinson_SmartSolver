@@ -1,34 +1,78 @@
+import os
+import sys
+import webbrowser
+import threading
+from fastapi.responses import FileResponse
+
+# 1. BLINDAJE DE LA CONSOLA (Para modo --windowed)
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, 'w')
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, 'w')
+
+# Usamos try/except porque os.devnull a veces no soporta 'reconfigure'
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
-import os
-import sys
 
-if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding='utf-8')
-    sys.stderr.reconfigure(encoding='utf-8')
-
+# Importaciones de tu proyecto
 from agents.orchestrator import orchestrator_executor
 from utils.callbacks import WebTerminalLogger
 
-# 1. Inicializamos la Aplicación Web
+# 2. FUNCIÓN PARA ENCONTRAR ARCHIVOS EN EL .EXE
+def obtener_ruta_recurso(ruta_relativa):
+    """
+    Obtiene la ruta absoluta al recurso. 
+    Funciona tanto en desarrollo como cuando está empaquetado en el .exe.
+    """
+    try:
+        # PyInstaller crea una carpeta temporal y guarda la ruta en sys._MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        # Si no estamos en el .exe, usamos la ruta normal
+        base_path = os.path.abspath(".")
+    
+    return os.path.join(base_path, ruta_relativa)
+
+
+# Inicializamos la Aplicación Web
 app = FastAPI(title="PR-SmartSolver API")
 
-# 2. Configuración CORS (VITAL para que tu archivo HTML pueda hablar con el servidor Python)
+# Configuración CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # En producción se restringe, pero para desarrollo local es perfecto
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 3. Definimos qué forma tiene la petición que llega del Frontend
+# 3. ENDPOINT PARA MOSTRAR LA INTERFAZ GRÁFICA
+@app.get("/")
+async def servir_interfaz():
+    """
+    Este endpoint sirve tu archivo index.html cuando el usuario abre la URL base.
+    """
+    # Buscamos el HTML en la raíz, ya que en tu comando usaste:
+    # --add-data "...frontend\index.html;."
+    ruta_html = obtener_ruta_recurso("index.html")
+    
+    if os.path.exists(ruta_html):
+        return FileResponse(ruta_html)
+    return {"error": f"No se encontró el archivo HTML en: {ruta_html}"}
+
+
 class QueryRequest(BaseModel):
     prompt: str
 
-# 4. El Endpoint que recibe la llamada desde JavaScript
 @app.post("/api/v1/solve")
 async def solve_thermo_endpoint(request: QueryRequest):
     """
@@ -38,7 +82,6 @@ async def solve_thermo_endpoint(request: QueryRequest):
     logger = WebTerminalLogger()
     
     try:
-        # Ejecutamos el orquestador inyectándole el espía para los logs
         response = orchestrator_executor.invoke(
             {"input": request.prompt},
             config={"callbacks": [logger]}
@@ -46,7 +89,6 @@ async def solve_thermo_endpoint(request: QueryRequest):
         
         agent_text = response['output']
         
-        # Recogemos el JSON de Plotly
         plotly_dict = {}
         if os.path.exists("latest_plot.json"):
             with open("latest_plot.json", "r", encoding="utf-8") as f:
@@ -69,38 +111,18 @@ async def solve_thermo_endpoint(request: QueryRequest):
             "plotly_data": {}
         }
 
-# Para correr el servidor localmente
+
+# 4. FUNCIÓN PARA ABRIR EL NAVEGADOR
+def abrir_navegador():
+    webbrowser.open("http://127.0.0.1:8000")
+
+
 if __name__ == "__main__":
     import uvicorn
+    
+    # Programamos que el navegador se abra 1.5 segundos DESPUÉS de ejecutar este bloque.
+    # Esto le da tiempo a uvicorn para encender el servidor.
+    threading.Timer(1.5, abrir_navegador).start()
+    
     print("🤖 Iniciando Servidor PR-SmartSolver en el puerto 8000...")
     uvicorn.run(app, host="127.0.0.1", port=8000)
-
-
-
-
-
-
-'''
-from agents.orchestrator import orchestrator_executor
-
-# =====================================================================
-# EXECUTION LOOP (CHATBOT MODE)
-# =====================================================================
-if __name__ == "__main__":
-    print("🤖 PR-SmartSolver Agent System Online")
-    print("Escribe tu problema de termodinámica o 'salir' para finalizar.\n")
-    
-    while True:
-        user_input = input("User: ")
-        if user_input.lower() in ["salir", "exit", "quit"]:
-            print("Cerrando el simulador. ¡Hasta luego!")
-            break
-            
-        print("\n[Orquestador analizando enunciado...]")
-        try:
-            # El Orquestador toma el control y decide a qué Especialista llamar
-            response = orchestrator_executor.invoke({"input": user_input})
-            print(f"\nAgent:\n{response['output']}\n")
-        except Exception as e:
-            print(f"\n❌ Error durante la ejecución: {e}\n")
-'''

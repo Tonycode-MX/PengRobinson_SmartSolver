@@ -2,6 +2,10 @@ import os
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
+from utils.path import obtener_ruta
+
+ruta_env = obtener_ruta(".env")
+load_dotenv(dotenv_path=ruta_env)
 
 load_dotenv()
 '''
