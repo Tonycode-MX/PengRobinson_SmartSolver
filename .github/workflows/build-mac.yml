@@ -48,4 +48,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: PR-SmartSolver-macOS
-        path: dist/main.app
+        path: dist/
