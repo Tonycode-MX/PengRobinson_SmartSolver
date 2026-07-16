@@ -30,8 +30,7 @@ jobs:
         # Creamos el archivo directamente en la raíz del repositorio
         touch .env
         echo "LANGCHAIN_API_KEY=${{ secrets.LANGCHAIN_API_KEY }}" >> .env
-        # Si tienes más API keys, descomenta la siguiente línea:
-        # echo "GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}" >> .env
+        echo "GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}" >> .env
 
     - name: Compilar con PyInstaller
       run: |
