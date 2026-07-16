@@ -1,5 +1,7 @@
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import os
+import tempfile
 
 def plot_thermodynamic_process(process_data: dict, fluids: list, fractions: list) -> None:
     """
@@ -152,7 +154,9 @@ def plot_thermodynamic_process(process_data: dict, fluids: list, fractions: list
     fig.update_yaxes(title_text="Molar Volume (m³/mol)", automargin=True, row=1, col=2, secondary_y=False)
     fig.update_yaxes(title_text="Energetic Properties (J/mol)", automargin=True, row=1, col=2, secondary_y=True)
 
-    with open("latest_plot.json", "w", encoding="utf-8") as f:
+    ruta_segura = os.path.join(tempfile.gettempdir(), "latest_plot.json")
+    
+    with open(ruta_segura, "w", encoding="utf-8") as f:
         fig.write_json(f)
 
 # --- Standalone Testing Block ---

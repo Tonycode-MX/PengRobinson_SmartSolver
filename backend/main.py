@@ -1,4 +1,5 @@
 import os
+import tempfile
 import sys
 import webbrowser
 import threading
@@ -90,10 +91,12 @@ async def solve_thermo_endpoint(request: QueryRequest):
         agent_text = response['output']
         
         plotly_dict = {}
-        if os.path.exists("latest_plot.json"):
-            with open("latest_plot.json", "r", encoding="utf-8") as f:
+        ruta_segura = os.path.join(tempfile.gettempdir(), "latest_plot.json")
+        
+        if os.path.exists(ruta_segura):
+            with open(ruta_segura, "r", encoding="utf-8") as f:
                 plotly_dict = json.load(f)
-            os.remove("latest_plot.json")
+            os.remove(ruta_segura)
             
         return {
             "status": "success",
